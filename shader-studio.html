@@ -153,6 +153,15 @@ body.hide-pv #pvwrap, body.hide-pv #shapes, body.hide-pv #lpHead, body.hide-pv #
 #pvwrap, #lpWrap { min-height: 80px; } #tabbody { min-height: 160px; }
 body.hide-pv .hsplit { display: none; }
 
+.lnew { border: 1px solid #2f4a78; background: #17233a; border-radius: 7px; padding: 6px 9px; margin: 6px 0 8px; }
+.lnl { font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; color: #7db4ff; margin-bottom: 3px; }
+.lni { padding: 3px 0; } .lni code { font: 12px var(--mono); color: #e9d9a6; background: transparent; border: 0; padding: 0; white-space: pre-wrap; } .lnd { color: #c8d0e0; font-size: 12px; line-height: 1.45; margin-top: 1px; } .lni a.dl { font-size: 11px; }
+.ltry { margin: 6px 0 0; padding: 5px 9px; border-left: 3px solid var(--good); background: rgba(95,207,128,.08); font-size: 12px; line-height: 1.45; color: #cfe8d6; } .ltry b { color: var(--good); }
+
+.tread { color: var(--dim); font: 11px var(--mono); align-self: center; padding-left: 6px; }
+.lreset { display: flex; gap: 8px; align-items: center; justify-content: space-between; border: 1px dashed #3a4a6a; border-radius: 7px; padding: 6px 9px; margin: 6px 0 10px; color: var(--dim); font-size: 12px; line-height: 1.4; } .lreset button { flex: none; }
+button.tread { font: 11px var(--mono); color: #cfd6e4; padding: 2px 7px; background: #12141a; } button.tread:hover { border-color: var(--accent); }
+
 </style></head><body>
 <div id="app">
   <div id="top">
@@ -752,6 +761,8 @@ function Geo() {
   };
 }
 const SHAPES = {
+  rect: { label: 'Rectangle', flat: true, stretch: true, make() { return SHAPES.plane.make(); } },
+  square: { label: 'Square', flat: true, make() { return SHAPES.plane.make(); } },
   sphere: { label: 'Sphere', make() { const G = Geo(); G.grid(72, 44, (u, v) => { const th = v * Math.PI, ph = u * 2 * Math.PI; const n = [Math.sin(th) * Math.cos(ph), Math.cos(th), Math.sin(th) * Math.sin(ph)]; return { p: n, n, uv: [u, 1 - v] }; }); return G.done(); } },
   cube: { label: 'Cube', make() {
     const G = Geo(), h = 0.78;
@@ -793,6 +804,11 @@ const TOD = {
 const MANAGED = new Set(['modelMatrix', 'modelViewMatrix', 'projectionMatrix', 'normalMatrix', 'cameraPosition', 'uTime', 'uSeed', 'uResolution', 'uLightDir', 'uLightCol', 'uAmbSky', 'uAmbGround', 'uTex0', 'uNoiseTex', 'uVizMode', 'uVizRange']);
 
 // ------------------------------------------------------------------ renderer
+const BUILTIN_UNI = { uTime: 'float', uSeed: 'float', uResolution: 'vec2', uLightDir: 'vec3', uLightCol: 'vec3', uAmbSky: 'vec3', uAmbGround: 'vec3', cameraPosition: 'vec3', uTex0: 'sampler2D', uNoiseTex: 'sampler2D' };
+/** The studio already declares uTime, uSeed...; if the user declares them again the compiler complains ("redefinition"). Comment such lines out, keeping the line count. */
+function stripBuiltinUniforms(code) {
+  return code.replace(/^([ \t]*)uniform\s+(?:highp\s+|mediump\s+|lowp\s+)?(\w+)\s+(\w+)\s*;/gm, (m, ind, type, name) => (BUILTIN_UNI[name] === type ? ind + '// (built in) ' + type + ' ' + name + ';' : m));
+}
 class GLView {
   constructor(canvas) {
     this.canvas = canvas; this.ok = false; this.meshes = {}; this.progs = new Map();
@@ -830,6 +846,7 @@ class GLView {
   }
   /** Compile `code` (everything after the common prelude). withViz adds the debug colour functions. Returns { ok, errors:[{line,msg}], prog }. */
   build(code, withViz) {
+    code = stripBuiltinUniforms(code);
     const gl = this.gl, pre = HEAD + PRELUDE + (withViz ? VIZ : ''), off = countNL(pre);
     const f = this.compile(gl.FRAGMENT_SHADER, pre + code);
     if (f.log) {
@@ -880,7 +897,8 @@ class GLView {
     if (!o.prog) return;
     const flat = o.mode === 'flat';
     let vx = 0, vy = 0, vw = W, vh = H;
-    if (flat) { const s = Math.min(W, H) * (o.full ? 1 : 0.94); vw = vh = Math.round(s); vx = Math.round((W - s) / 2); vy = Math.round((H - s) / 2); }
+    if (flat && o.stretch) { vx = 0; vy = 0; vw = W; vh = H; }
+    else if (flat) { const s = Math.min(W, H) * (o.full ? 1 : 0.94); vw = vh = Math.round(s); vx = Math.round((W - s) / 2); vy = Math.round((H - s) / 2); }
     gl.viewport(vx, vy, vw, vh);
     let proj, view, model, camPos;
     if (flat) { proj = M4.ortho(-1, 1, -1, 1, -10, 10); view = M4.ident(); model = M4.ident(); camPos = [0, 0, 4]; }
@@ -2232,316 +2250,697 @@ void main() {
 for (const s of LIB) s.key = 'b:' + s.n;
 
 /* ===== lessons.js : the Learn tab content =====
-   Text markup: `code`, **bold**, [[docName]] (link to the Docs tab), blank line = new paragraph.
-   A step with `code` gets a picture + the code; lines new since the previous step are highlighted.   */
+   Rules this file follows (and test_compile.html checks automatically):
+     - every function / variable / type that appears in a step's code was introduced in that step or an earlier one
+       (listed in `new`), so nothing is used before it is taught
+     - at most one or two new ideas per step
+   Text markup: `code`, **bold**, *italic*, [[docName]] (link to the Docs tab), blank line = new paragraph.
+   Step fields: t (title), x (text), code, shape (3D preview), new (list of docs names, or N(...) for custom items), try (what to change). */
 const LESSONS = [];
 const lesson = (id, title, level, blurb, steps, shape) => LESSONS.push({ id, title, level, blurb, steps, shape: !!shape });
+const N = (k, sig, d) => ({ k, sig, d });   // a "new" item that has no Docs entry of its own
 
 // ====================================================================== 1
-lesson('uv', 'UV coordinates and vector maths', 'Start here',
-  'What a shader is, what `vUv` means, and the vector maths (add, scale, length, distance, dot, angle) that nearly every effect is built from.', [
-  { t: 'A shader runs once per pixel', x: `A fragment shader is a tiny function that the graphics card runs **for every pixel** of the object, all at the same time. Each run knows where its pixel is and has to answer one question: **what colour am I?** The answer goes in \`gl_FragColor\`, four numbers: red, green, blue, alpha, each from 0.0 to 1.0.
+lesson('basics', 'The very first shader: main() and colour', 'Absolute beginner',
+  'One line that paints everything red, then what `void main()`, `gl_FragColor`, `vec4` and the four colour numbers really mean.', [
+  { t: 'One line, one colour', x: `This is a complete shader. It has exactly one job: **decide the colour of a pixel**. The line sets \`gl_FragColor\`, the shader's output, to four numbers: red, green, blue and alpha.
 
-The most important input is [[vUv]], a \`vec2\` (two numbers, x and y) saying where this pixel sits on the surface: x runs from 0 on the left to 1 on the right, y from 0 at the bottom to 1 at the top. Here we simply use them as the red and green amounts, so you can **see** the coordinates.
-
-Click the line below in the editor: the small line preview shows the value of the line your cursor is on.`,
+Red is 1.0 (full), green and blue are 0.0 (none), so everything is red. The \`void main() { }\` around it is the wrapper every shader needs; the next step explains it.`,
+    new: ['gl_FragColor', 'vec4'], try: 'Click the line and change a number, for example the second one to 1.0. The big preview updates instantly.',
     code: `void main() {
-  gl_FragColor = vec4(vUv.x, vUv.y, 0.0, 1.0);
+  gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
 }` },
-  { t: 'One number at a time', x: `\`vUv.x\` is one component of the vector. A single number can become a grey by repeating it three times: \`vec3(g)\` is a shortcut for \`vec3(g, g, g)\`.
+  { t: 'What void main() { } means', x: `\`main\` is the **name** of the function the graphics card runs. You never call it yourself: the card calls it for you, **once for every pixel**.
 
-So this picture is just "brightness = how far right am I". Change \`vUv.x\` to \`vUv.y\` to turn it. Everything in shader writing is like this: **turn position into a number, then turn the number into a colour.**`,
+\`void\` means "this function gives nothing back". Instead it *writes* its answer into \`gl_FragColor\`. Whatever is in there when \`main\` ends becomes the pixel's colour.
+
+The curly braces \`{ }\` hold everything that belongs to \`main\`. Every line that does something ends with a **semicolon**. A missing semicolon is the most common first error; the red message under the editor tells you which line.
+
+Text after \`//\` is a **comment**: the computer ignores it, it's a note for you.`,
+    new: [N('main', 'void main() { ... }', 'The function the card runs once for every pixel. Your code goes between the braces.')],
+    try: 'Delete the semicolon at the end of the gl_FragColor line and read the error message. Then put it back.',
     code: `void main() {
-  float g = vUv.x;
-  gl_FragColor = vec4(vec3(g), 1.0);
+  // everything in here runs once per pixel
+  gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);   // red
 }` },
-  { t: 'Vectors and swizzles', x: `A \`vec2/vec3/vec4\` is a small bundle of numbers. You can build bigger ones from smaller ones (\`vec3(uv, 0.0)\` = x, y, then 0), change one part (\`col.b = ...\`), or **swizzle**, which means pick or reorder parts by name: \`col.bgr\` reverses red and blue. \`.xyzw\` and \`.rgba\` are the same four slots with different names.
+  { t: 'The four numbers: r, g, b, a', x: `The colour is **four numbers, always in this order**:
 
-Maths on vectors works **per component**: \`a + b\` adds x with x, y with y; \`a * 2.0\` doubles every part; \`a * b\` multiplies matching parts (not a dot product!).`,
+**r** red amount, **g** green amount, **b** blue amount, **a** alpha (how solid; 1.0 is fully solid).
+
+Each goes from **0.0** (none) to **1.0** (full). A screen makes every colour by mixing red, green and blue light, so mixing means **adding light**: red + green = **yellow**, all three = **white**, none = **black**.
+
+Alpha only matters when the shader type (top bar) is set to *transparent*. Otherwise leave it at 1.0.`,
+    try: 'Make green: (0.0, 1.0, 0.0, 1.0). Make grey: (0.5, 0.5, 0.5, 1.0). Make white. Make black.',
     code: `void main() {
-  vec2 uv = vUv;
-  vec3 col = vec3(uv, 0.0);
-  col.b = 1.0 - uv.x;
-  col = col.bgr;
+  gl_FragColor = vec4(1.0, 1.0, 0.0, 1.0);
+}` },
+  { t: 'Give each number a name', x: `\`vec4(1.0, 1.0, 0.0, 1.0)\` is hard to read: which number is which? Let's **name the four numbers** first.
+
+\`float\` is the type for **one decimal number**. We make four of them, called r, g, b and a, and hand them to \`vec4(...)\` in the same order. The picture is identical to the last step; only the writing is clearer.
+
+This is the pattern every shader uses: **work out some numbers, then gather them into a colour on the last line.**`,
+    new: ['float'], try: 'Change the value of b from 0.0 to 1.0. The yellow becomes white.',
+    code: `void main() {
+  float r = 1.0;
+  float g = 1.0;
+  float b = 0.0;
+  float a = 1.0;
+  gl_FragColor = vec4(r, g, b, a);
+}` },
+  { t: 'Numbers can be calculated', x: `A number doesn't have to be typed in. It can be **calculated from other numbers**. Here \`b\` is "one minus r", so when r is 0.5, b is 0.5.
+
+Also: always write **1.0, not 1**. GLSL is strict: \`1\` is a whole number (an *int*), \`1.0\` is a decimal number (a *float*), and it will **not** convert between them for you. Using \`1\` where a float is needed is a common error.`,
+    try: 'Change r to 0.9: b follows automatically (it becomes 0.1).',
+    code: `void main() {
+  float r = 0.5;
+  float g = 0.2;
+  float b = 1.0 - r;
+  float a = 1.0;
+  gl_FragColor = vec4(r, g, b, a);
+}` },
+  { t: 'What is a vector?', x: `\`vec4\` is a **vector**: a small bundle of numbers stored under one name. Three sizes matter:
+
+**vec2**: two numbers, usually a *position* (x, y)
+**vec3**: three numbers, usually a *colour* (r, g, b) or a *direction*
+**vec4**: four numbers, a colour with alpha
+
+You can reach each part by name. For colours: \`.r .g .b .a\`. For positions: \`.x .y .z .w\`. These are the **same four slots with different names**: \`c.r\` and \`c.x\` are the same number. You can read a part (\`c.r\`) or change it (\`c.g = 0.9;\`).`,
+    new: [N('c.r  c.g  c.b  c.a', 'c.r   c.x', 'Pick one part of a vector by name (r, g, b, a for colours; x, y, z, w for positions).')],
+    try: 'Change the 0.9 on the c.g line, or change c.r = 0.0 to see only green.',
+    code: `void main() {
+  vec4 c = vec4(1.0, 0.5, 0.0, 1.0);
+  c.g = 0.9;
+  gl_FragColor = c;
+}` },
+  { t: 'vec3: a colour without alpha', x: `Most of the time you only care about red, green and blue, and alpha is always 1.0. So we make an RGB colour with **vec3** and add the alpha at the very end:
+
+\`vec4(col, 1.0)\` means "the three numbers of col, then 1.0": a vec4 built from a vec3 plus one float. GLSL lets you mix pieces like this, as long as the total count is right.
+
+Two shortcuts: \`vec3(0.5)\` means \`vec3(0.5, 0.5, 0.5)\` (a grey), and \`.rgb\` picks the first three parts of a vec4.`,
+    new: ['vec3'], try: 'Try vec3(0.5) as the colour for a grey, or vec3(1.0, 0.3, 0.6) for pink.',
+    code: `void main() {
+  vec3 col = vec3(0.2, 0.6, 1.0);
   gl_FragColor = vec4(col, 1.0);
 }` },
-  { t: 'Move the origin: centre the coordinates', x: `Coordinates that start in the corner are awkward for round things. Subtracting 0.5 from **both** parts slides the whole picture so (0, 0) is in the middle: x and y now run from -0.5 to 0.5.
+  { t: 'Maths on vectors', x: `Arithmetic on a vector works on **all its parts at once**:
 
-Now [[length]] gives the distance from the middle: \`length(p)\` is √(x² + y²), Pythagoras. It is 0 in the centre and grows outwards in a perfect circle shape. Circles, rings, glows and vignettes all start here.`,
-    code: `void main() {
-  vec2 p = vUv - 0.5;
-  float d = length(p);
-  gl_FragColor = vec4(vec3(d), 1.0);
-}` },
-  { t: 'Scale the space', x: `Multiplying a coordinate **zooms** the picture: \`p * 2.0\` makes numbers twice as big, so everything appears half as big (you cover twice as much of the pattern). We use it to get a handy range: x and y now go from -1 to 1, with length 1 at the edge middle.
+\`col * 0.5\`: every part halved (darker)
+\`col + 0.2\`: 0.2 added to every part (lighter)
+\`col * tint\`: matching parts multiplied (red × red, green × green...)
 
-Rule of thumb: **multiply the coordinates to get more of a pattern, divide for less.** \`vUv * 10.0\` repeats ten times across.`,
+Multiplying two colours is how you **tint** something: a blue thing times an orange tint keeps only what both colours share, so it gets dark and murky. Below, the sky blue is multiplied by the tint, then 0.1 is added to all three parts.`,
+    try: 'Set tint to vec3(1.0) and nothing changes (multiplying by 1 does nothing). Set it to vec3(0.5) and everything halves.',
     code: `void main() {
-  vec2 p = (vUv - 0.5) * 2.0;
-  float d = length(p);
-  gl_FragColor = vec4(vec3(d), 1.0);
-}` },
-  { t: 'Distance to any point', x: `[[distance]](a, b) is just \`length(a - b)\`: the distance between two points. Moving the point is moving the circle. The red dot is drawn with [[step]]: \`step(0.05, d)\` is 0 when d is below 0.05 and 1 otherwise, a hard on/off switch, and \`mix\` ([[mix]]) uses it to pick red or the grey.
-
-Try dragging the numbers in \`vec2(0.3, -0.2)\` with the mouse.`,
-    code: `void main() {
-  vec2 p = (vUv - 0.5) * 2.0;
-  vec2 c = vec2(0.3, -0.2);
-  float d = distance(p, c);
-  vec3 col = vec3(d);
-  col = mix(vec3(1.0, 0.1, 0.1), col, step(0.05, d));
+  vec3 col = vec3(0.2, 0.6, 1.0);
+  vec3 tint = vec3(1.0, 0.7, 0.3);
+  col = col * tint;
+  col = col + 0.1;
   gl_FragColor = vec4(col, 1.0);
 }` },
-  { t: 'Dot product: how far along a direction', x: `[[dot]](a, b) = a.x·b.x + a.y·b.y. When \`b\` has length 1 it means "**how far does a point lie along the direction b**". It is 0 on the line across the middle, positive on one side, negative on the other. That is the heart of lighting too: light brightness is \`dot(normal, lightDirection)\`.
+  { t: 'The limits: below 0 and above 1', x: `A screen can only show 0 to 1. A value of 3.0 is **clamped** and looks exactly like 1.0; a negative value looks like 0.0 (black). This colour is orange-red with its red part at 3.0: it looks the same as with 1.0.
 
-[[normalize]] makes a vector length 1 while keeping its direction. The \`* 0.5 + 0.5\` squeezes a -1..1 value into 0..1 so we can show it as grey. This remapping is used constantly.`,
-    code: `void main() {
-  vec2 p = (vUv - 0.5) * 2.0;
-  vec2 dir = normalize(vec2(1.0, 0.5));
-  float s = dot(p, dir);
-  gl_FragColor = vec4(vec3(s * 0.5 + 0.5), 1.0);
-}` },
-  { t: 'Angle: polar coordinates', x: `Any position can also be described as **an angle around the middle and a distance from it**. [[atan]](y, x) gives the angle in radians (-π..π); dividing by \`TAU\` (2π) and adding 0.5 makes it 0..1 all the way around.
+The extra brightness isn't lost *inside* the shader, though: if you later multiply or blend, a 3.0 stays strong. That's how glows are made.
 
-Here the angle picks the **hue** and the distance darkens the colour ([[hsv2rgb]]). Swap the two roles and you get rings. Polar thinking gives you stars, flowers, spirals, radar sweeps and radial gradients.`,
+You now know every piece in a one-line shader. Next lesson: what the card actually does with it.`,
+    try: 'Change 3.0 to 1.0, then to -1.0, and see which changes look different.',
     code: `void main() {
-  vec2 p = (vUv - 0.5) * 2.0;
-  float a = atan(p.y, p.x) / TAU + 0.5;
-  float d = length(p);
-  vec3 col = hsv2rgb(vec3(a, 0.8, 1.0 - d * 0.6));
+  vec3 col = vec3(3.0, 0.5, 0.2);
   gl_FragColor = vec4(col, 1.0);
 }` },
 ]);
 
 // ====================================================================== 2
-lesson('orb', 'Build a glowing orb', 'Beginner',
-  'Draw a shape, soften its edge, colour it, shade it, add a glow and animate it. Each step changes only a little.', [
-  { t: 'A hard-edged circle', x: `Start with the distance from the middle (see the UV lesson). [[step]](edge, x) returns 0 if x is below the edge and 1 if it is above, so \`1.0 - step(0.3, d)\` is 1 **inside** radius 0.3 and 0 outside. That 0/1 picture is called a **mask**. Masks are how you say "put this here, not there".`,
+lesson('pixels', 'How shaders run: one pixel at a time', 'Absolute beginner',
+  'Your code runs separately for every pixel, and a pixel cannot see its neighbours. What follows from that, and how to think about it.', [
+  { t: 'The same code, everywhere at once', x: `A shader is **one small program run again and again, once for each pixel** of the object, all at the same moment (a graphics card has thousands of tiny processors). A 500 × 500 picture means 250,000 runs of \`main()\`.
+
+Every run is the same code. If they all received the same input they'd all give the same colour. What makes the picture interesting is that **each pixel is told where it is**, through an input called [[vUv]]. \`vUv\` is a vec2: \`vUv.x\` is 0 at the left edge and 1 at the right edge. (You can use \`.x .y\` and \`.r .g\` interchangeably, they're the same slots.)
+
+Here the colour is simply the pixel's own x position, repeated three times as a grey. Every pixel runs the same formula; the left ones get small numbers, the right ones large.`,
+    new: ['vUv'], try: 'Change vUv.x to vUv.y: the gradient turns to go from bottom (black) to top (white).',
+    code: `void main() {
+  float g = vUv.x;
+  gl_FragColor = vec4(vec3(g), 1.0);
+}` },
+  { t: 'Two numbers: x and y', x: `\`vUv\` has **two** numbers: x runs 0 to 1 from left to right, y runs 0 to 1 from the bottom to the top. Here they become the red and green parts of the colour.
+
+Look at the corners: bottom-left has x = 0, y = 0 so it's black. Top-right has both at 1, so red + green = yellow. Bottom-right is only red, top-left only green. Once you can predict this picture, you understand \`vUv\`.`,
+    try: 'Put vUv.y in the blue slot too: vec4(vUv.x, vUv.y, vUv.y, 1.0).',
+    code: `void main() {
+  gl_FragColor = vec4(vUv.x, vUv.y, 0.0, 1.0);
+}` },
+  { t: 'Every pixel does its own sum', x: `Now do some maths with it. \`vUv.x * vUv.x\` multiplies a pixel's x by itself. A pixel at x = 0.5 computes 0.25. A pixel at x = 1.0 computes 1.0. So the picture is dark for a long way and then brightens quickly: the gradient has been *bent*.
+
+The important part: **each pixel just did a small sum with its own position.** It did not look at the pixel next to it. The picture looks smooth only because the formula is smooth: tiny change in position, tiny change in answer.`,
+    try: 'Try vUv.x * vUv.y (a corner gradient), or vUv.x * 0.5 (a darker gradient).',
+    code: `void main() {
+  float g = vUv.x * vUv.x;
+  gl_FragColor = vec4(vec3(g), 1.0);
+}` },
+  { t: 'The big rule: pixels cannot talk to each other', x: `Here is the most important idea in shader writing:
+
+**Each pixel is calculated alone. It cannot read its neighbour's colour, and it cannot see what any other pixel is doing.**
+
+They all run at the same moment, so there is no "left pixel first, then me", and nothing to look at. Writing "my colour = my left neighbour's colour plus a bit" is impossible: there is nowhere to read that from.
+
+What a pixel *can* know: **its own position** (like \`vUv\`), **numbers that are the same for everybody** (like time, next step), and **the maths in your code**.
+
+Consequences you'll see over and over:
+**1.** Nothing is remembered between pixels, or between frames. Variables are born when the pixel's run starts and vanish when it ends.
+**2.** To make a shape you don't "draw it": every pixel asks *"am I inside the shape?"* from its own position.
+**3.** To make something move, you change an **input** that every pixel receives.`, },
+  { t: 'fract: count up, then start over', x: `Before we meet time, one small tool, because time **never stops growing** (1, 2, 3 ... 100 ... 5000 seconds) and we'll want it to start over again and again.
+
+[[fract]](x) throws away the whole part of a number and keeps only the decimals: 1.7 becomes 0.7, 2.3 becomes 0.3, 4.0 becomes 0.0. Feed it a number that keeps growing and you get a **ramp from 0 to 1 that restarts** each time the number passes a whole number. (This kind of "wrap around" is also called *modulo*; you'll meet the full version, \`mod\`, later.)
+
+Here \`vUv.x * 3.0\` grows from 0 to 3 across the picture, so the ramp restarts twice and you see **three** ramps. The multiplier is how many repeats.`,
+    new: ['fract'], try: 'Change 3.0 to 1.0 (one ramp, same as before), then to 8.0.',
+    code: `void main() {
+  float f = fract(vUv.x * 3.0);
+  gl_FragColor = vec4(vec3(f), 1.0);
+}` },
+  { t: 'Same for everyone: uTime', x: `[[uTime]] is the number of **seconds since the shader started**. **Every pixel receives the same value** of \`uTime\` in a given frame: a number that is "the same for everybody" is called a **uniform**. You can watch it counting next to the shape buttons above the previews ("uTime 4.2").
+
+Used on its own it has a problem: it only ever grows. \`uTime * 0.25\` would reach 1.0 (full red) after 4 seconds and then stay white-hot forever, because the screen can't show more than 1.0. So we wrap it with \`fract\`: \`fract(uTime * 0.25)\` counts 0 to 1 over four seconds and **starts again, forever**. The whole picture is one flat red that pulses up and restarts every 4 seconds. Not a gradient: every pixel agrees.
+
+The picture moves because *the input* changed; nothing was remembered from the previous frame. If you want to restart time by hand, **click the "uTime" number** above the previews: it jumps back to 0.`,
+    new: ['uTime'], try: 'Change 0.25 to 1.0 to make it restart every second. Click the uTime number above the preview to jump back to 0.',
+    code: `void main() {
+  float r = fract(uTime * 0.25);
+  gl_FragColor = vec4(r, 0.0, 0.0, 1.0);
+}` },
+  { t: 'Different per pixel vs. the same for everyone', x: `Now you know both kinds of input, and a lot of the docs use these words:
+
+**Per-pixel inputs** (often called *varyings*) **differ from pixel to pixel**: \`vUv\`, \`vPos\` (3D position), \`vN\` (surface direction).
+
+**Uniforms** are **the same for every pixel**: \`uTime\`, \`uSeed\`, the light direction, and the sliders in the Uniforms tab.
+
+In this picture red comes from \`vUv.x\` (differs across the picture), green from \`vUv.y\` (differs), and blue from \`fract(uTime * 0.25)\` (identical everywhere, it counts up and restarts). Only the blue changes over time.`,
+    try: 'Replace the whole fract(uTime * 0.25) with 0.5 for a still picture.',
+    code: `void main() {
+  gl_FragColor = vec4(vUv.x, vUv.y, fract(uTime * 0.25), 1.0);
+}` },
+  { t: 'Think like a single pixel', x: `So shader writing is a particular way of thinking. Before writing code, imagine you are **one pixel** and ask: *"What do I know about myself, and from that, what colour should I be?"*
+
+To draw a circle in the middle you don't draw anything. Each pixel asks: **"how far am I from the middle?"** Pixels that are close answer "light", the others answer "dark", and together they *look* like a circle. Nobody drew it.
+
+That's exactly the next lesson: we'll turn position into a distance, and a distance into a shape. Every effect in this studio is built that way:
+
+**position** → **a number** (distance, angle, noise...) → **a colour**`, },
+]);
+
+// ====================================================================== 3
+lesson('shapes', 'Making shapes from position', 'Beginner',
+  'Centre the coordinates, measure distance, and cut it into a hard or soft edged circle. You will learn length, distance, step, smoothstep and mix.', [
+  { t: 'Move the zero to the middle', x: `\`vUv\` starts in the corner. For round things we want (0, 0) in the **middle**. Subtracting 0.5 from a vec2 subtracts it from **both** x and y: now each runs from -0.5 to 0.5.
+
+We name the result \`p\` ("position"). The picture shows \`p.x\` as red and \`p.y\` as green. Notice that only the **top-right** quarter is coloured: the left half has negative x and the bottom half has negative y, and **negative numbers show as black**.`,
+    new: ['vec2'], try: 'Try vUv - 0.3 and watch where the colour starts.',
+    code: `void main() {
+  vec2 p = vUv - 0.5;
+  gl_FragColor = vec4(p.x, p.y, 0.0, 1.0);
+}` },
+  { t: 'length: how far from the middle', x: `[[length]] takes a vector and gives back **how long it is**. For a position that's the **distance from (0, 0)**, which is now the middle. (It's Pythagoras: the square root of x² + y².)
+
+The result is 0 in the centre and grows outwards equally in every direction, and *that* is why you get a circle shape. Black in the middle, brighter outwards.`,
+    new: ['length'], try: 'Draw the opposite: gl_FragColor = vec4(vec3(1.0 - d), 1.0); is a bright centre.',
+    code: `void main() {
+  vec2 p = vUv - 0.5;
+  float d = length(p);
+  gl_FragColor = vec4(vec3(d), 1.0);
+}` },
+  { t: 'Zoom by multiplying', x: `Multiplying the position **changes the scale**. \`p * 3.0\` makes every number three times as big, so the distance grows three times as fast: the circle pattern gets **smaller** (you reach white quickly). Dividing would make it bigger.
+
+Rule of thumb: **multiply a position to get more of a pattern, divide to get less.** You'll use this constantly: \`vUv * 10.0\` repeats something ten times across.`,
+    try: 'Try 1.0, 2.0, 6.0 and 20.0.',
+    code: `void main() {
+  vec2 p = vUv - 0.5;
+  float d = length(p * 3.0);
+  gl_FragColor = vec4(vec3(d), 1.0);
+}` },
+  { t: 'distance: from any point', x: `\`length(p)\` measures the distance from the middle. What about from another point? [[distance]](a, b) is the distance between two positions. It's the same as \`length(a - b)\`.
+
+Here the point is \`vec2(0.2, 0.1)\`: to the right of the middle and a bit up, so that's where it's darkest. **Moving the point moves the circle.**`,
+    new: ['distance'], try: 'Change the two numbers in vec2(0.2, 0.1). Drag them with the mouse.',
+    code: `void main() {
+  vec2 p = vUv - 0.5;
+  float d = distance(p, vec2(0.2, 0.1));
+  gl_FragColor = vec4(vec3(d), 1.0);
+}` },
+  { t: 'step: a hard on/off switch', x: `So far we have smooth gradients. To get a **sharp edge** we need a switch. [[step]](edge, x) gives back **0.0 if x is below the edge, and 1.0 if x is at or above it**. Nothing in between.
+
+Here x is the pixel's horizontal position and the edge is 0.5: left half 0 (black), right half 1 (white).`,
+    new: ['step'], try: 'Change 0.5 to 0.2 or 0.8 and the edge moves. Change vUv.x to vUv.y.',
+    code: `void main() {
+  float s = step(0.5, vUv.x);
+  gl_FragColor = vec4(vec3(s), 1.0);
+}` },
+  { t: 'A hard-edged circle', x: `Combine the two: take the **distance** from the middle (0 in the centre, bigger outward) and cut it with \`step\`.
+
+\`step(0.3, d)\` is **0 close to the middle** (d below 0.3) and **1 outside**. That's the opposite of what we want, so we flip it with \`1.0 - ...\`: 0 becomes 1, and 1 becomes 0. Now the inside is white.
+
+A 0/1 picture like this is called a **mask**: 1 means "yes, this pixel is part of it".`,
+    try: 'Change 0.3 to make the circle bigger or smaller. Delete the "1.0 -" to see it inverted.',
     code: `void main() {
   vec2 p = vUv - 0.5;
   float d = length(p);
   float m = 1.0 - step(0.3, d);
   gl_FragColor = vec4(vec3(m), 1.0);
 }` },
-  { t: 'Soften the edge', x: `A hard edge looks jagged. [[smoothstep]](a, b, x) goes smoothly from 0 at \`a\` to 1 at \`b\` (an S-curve), so the edge fades over a thin band instead of jumping. The wider the band, the softer. The 0.28 and 0.32 are the two ends of the fade.`,
+  { t: 'smoothstep: a soft switch', x: `A hard edge looks jagged. [[smoothstep]](a, b, x) is a **soft step**: it gives 0.0 when x is below \`a\`, 1.0 when x is above \`b\`, and a **smooth blend in between**. The wider the gap between a and b, the softer the transition.
+
+Here the x position goes from 0.3 to 0.7: below 0.3 it's black, above 0.7 it's white, and in between it's a gentle ramp.`,
+    new: ['smoothstep'], try: 'Make a and b closer (0.49, 0.51): it almost becomes a hard step. Make them far apart (0.0, 1.0).',
+    code: `void main() {
+  float s = smoothstep(0.3, 0.7, vUv.x);
+  gl_FragColor = vec4(vec3(s), 1.0);
+}` },
+  { t: 'A soft-edged circle', x: `Swap \`step\` for \`smoothstep\` in the circle. The fade now happens between the distance 0.28 and 0.32, a thin soft edge instead of a staircase. Still inverted with \`1.0 -\` so the inside is white.
+
+You now have the two standard ways to make a mask: **step** (hard) and **smoothstep** (soft). Almost every shape in a shader is "make a distance, then smoothstep it".`,
+    try: 'Widen the fade: smoothstep(0.1, 0.4, d).',
     code: `void main() {
   vec2 p = vUv - 0.5;
   float d = length(p);
   float m = 1.0 - smoothstep(0.28, 0.32, d);
   gl_FragColor = vec4(vec3(m), 1.0);
 }` },
-  { t: 'Colour with mix', x: `[[mix]](a, b, t) blends from a to b: t = 0 gives a, t = 1 gives b, 0.5 is halfway. A mask is just a \`t\`. So \`mix(background, orb, m)\` says: where the mask is 1 show the orb colour, where it is 0 show the background. **Masks + mix is the basic way to layer things.**`,
+  { t: 'mix: blend two things', x: `[[mix]](a, b, t) **blends from a to b**: t = 0 gives a, t = 1 gives b, t = 0.5 is halfway. It works on numbers and on colours (it blends every part).
+
+Here t is the pixel's x position, so the colour fades from red on the left to blue on the right.`,
+    new: ['mix'], try: 'Change the two colours. Use vUv.y instead of vUv.x.',
     code: `void main() {
-  vec2 p = vUv - 0.5;
-  float d = length(p);
-  float m = 1.0 - smoothstep(0.28, 0.32, d);
-  vec3 bg = vec3(0.02, 0.02, 0.08);
-  vec3 orb = vec3(1.0, 0.6, 0.2);
-  vec3 col = mix(bg, orb, m);
+  vec3 a = vec3(1.0, 0.1, 0.1);
+  vec3 b = vec3(0.1, 0.1, 1.0);
+  vec3 col = mix(a, b, vUv.x);
   gl_FragColor = vec4(col, 1.0);
 }` },
-  { t: 'Fake a sphere', x: `Flat colour looks like a sticker. Inside a circle of radius r, a sphere's surface height is z = √(r² − x² − y²). Using \`d/r\` we get a 0..1 value, and \`sqrt(1 - q*q)\` is 1 in the middle (surface faces you) and 0 at the rim (surface turns away). Multiplying the colour by that makes the middle bright and the rim dark: instant 3D.`,
+  { t: 'Put it together: a mask picks the colour', x: `Now the circle mask is the \`t\` in \`mix\`: where the mask is 0 you get the background colour, where it is 1 you get the circle colour, and in the soft edge you get a blend.
+
+**Mask + mix is the basic way to layer anything in a shader.** Everything later is a variation: make a mask (some shape, pattern or noise), then \`mix\` two looks with it.`,
+    try: 'Change the two colours. Then make the circle bigger with the 0.28 / 0.32 numbers.',
     code: `void main() {
   vec2 p = vUv - 0.5;
   float d = length(p);
   float m = 1.0 - smoothstep(0.28, 0.32, d);
-  float q = d / 0.3;
-  float z = sqrt(max(0.0, 1.0 - q * q));
+  vec3 bg = vec3(0.05, 0.05, 0.2);
+  vec3 disc = vec3(1.0, 0.6, 0.2);
+  gl_FragColor = vec4(mix(bg, disc, m), 1.0);
+}` },
+]);
+
+// ====================================================================== 4
+lesson('orb', 'Build a glowing orb', 'Beginner',
+  'Use everything so far, and add exp (for glow) and sin (for pulsing) to build an animated orb.', [
+  { t: 'Where we are', x: `This is the soft circle from the last lesson, with a dark blue background. We'll add a **glow** around it and make it **pulse**. First we need two new tools.`,
+    try: 'Warm-up: change the colours, or the radius numbers.',
+    code: `void main() {
+  vec2 p = vUv - 0.5;
+  float d = length(p);
+  float orb = 1.0 - smoothstep(0.25, 0.29, d);
   vec3 bg = vec3(0.02, 0.02, 0.08);
-  vec3 orb = vec3(1.0, 0.6, 0.2) * (0.25 + 0.75 * z);
-  vec3 col = mix(bg, orb, m);
+  vec3 col = mix(bg, vec3(1.0, 0.6, 0.2), orb);
   gl_FragColor = vec4(col, 1.0);
 }` },
-  { t: 'Add a glow', x: `A glow is a value that is bright near the orb and fades with distance. \`exp(-d * 6.0)\` is 1 at d = 0 and drops quickly (a bigger number than 6 = a tighter glow). We add the glow colour to the **background** before the orb is mixed on top, so it never covers the orb itself. Adding light is why glow uses \`+\` rather than \`mix\`.`,
+  { t: 'exp: a number that fades quickly', x: `[[exp]](x) is a function with a very useful shape when you feed it a **negative** number: \`exp(-d)\` is 1.0 when d is 0, and drops quickly towards 0 as d grows.
+
+Feed it the distance from the middle and you get something that is **bright in the middle and fades smoothly away**: a glow. The number you multiply d by is the *tightness*: \`exp(-d * 2.0)\` is wide and soft, \`exp(-d * 10.0)\` is small and sharp.`,
+    new: ['exp'], try: 'Try 2.0, then 10.0, then 20.0 in place of 6.0.',
     code: `void main() {
   vec2 p = vUv - 0.5;
   float d = length(p);
-  float m = 1.0 - smoothstep(0.28, 0.32, d);
-  float q = d / 0.3;
-  float z = sqrt(max(0.0, 1.0 - q * q));
+  float glow = exp(-d * 6.0);
+  gl_FragColor = vec4(vec3(glow), 1.0);
+}` },
+  { t: 'Add the glow behind the orb', x: `A glow is **extra light**, so we *add* it: \`bg\` becomes the dark blue plus orange times the glow amount (0.6 to keep it gentle). We do this to the background **before** the orb is mixed on top, so the glow never covers the orb itself.`,
+    try: 'Change 0.6 to make the glow stronger or weaker.',
+    code: `void main() {
+  vec2 p = vUv - 0.5;
+  float d = length(p);
+  float orb = 1.0 - smoothstep(0.25, 0.29, d);
   float glow = exp(-d * 6.0);
   vec3 bg = vec3(0.02, 0.02, 0.08) + vec3(1.0, 0.4, 0.1) * glow * 0.6;
-  vec3 orb = vec3(1.0, 0.6, 0.2) * (0.25 + 0.75 * z);
-  vec3 col = mix(bg, orb, m);
+  vec3 col = mix(bg, vec3(1.0, 0.6, 0.2), orb);
   gl_FragColor = vec4(col, 1.0);
 }` },
-  { t: 'Make it pulse', x: `[[uTime]] counts seconds. [[sin]] turns a steadily growing number into a smooth wave between -1 and 1. So \`0.28 + 0.03 * sin(uTime * 3.0)\` is a radius that swings between 0.25 and 0.31, three radians per second. **Animation is always: take something static and add a sine of time to it.** Hover the picture to watch it move.`,
+  { t: 'sin: a smooth wave', x: `[[sin]](x) turns a steadily growing number into a **wave** that goes up and down between -1 and 1 and repeats forever. Feed it the x position times 20 and you get 20-ish bumps across the picture.
+
+Because a wave goes *negative* and the screen can't show negative, we squash it into 0..1 with \`0.5 + 0.5 * sin(...)\`: halve it (-0.5 to 0.5), then shift it up (0 to 1). You'll see this "* 0.5 + 0.5" trick a lot.`,
+    new: ['sin'], try: 'Change 20.0 to 5.0 (wider stripes) or 60.0 (finer stripes).',
+    code: `void main() {
+  float s = 0.5 + 0.5 * sin(vUv.x * 20.0);
+  gl_FragColor = vec4(vec3(s), 1.0);
+}` },
+  { t: 'sin of time: pulsing', x: `Put \`uTime\` inside the \`sin\`: now the wave is over *time* instead of position, so the number slowly swings up and down. Multiply \`uTime\` to change the speed.
+
+The orb radius becomes \`r = 0.25 + 0.03 * sin(uTime * 3.0)\`: a base size of 0.25 with a wobble of ±0.03. **Animation = take something fixed and add a sin of time to it.** It pulses by itself in the picture.`,
+    try: 'Change 3.0 to speed it up, 0.03 for a bigger wobble.',
     code: `void main() {
   vec2 p = vUv - 0.5;
   float d = length(p);
-  float r = 0.28 + 0.03 * sin(uTime * 3.0);
-  float m = 1.0 - smoothstep(r, r + 0.04, d);
-  float q = d / (r + 0.02);
-  float z = sqrt(max(0.0, 1.0 - q * q));
-  float glow = exp(-d * 6.0) * (0.8 + 0.2 * sin(uTime * 3.0));
+  float r = 0.25 + 0.03 * sin(uTime * 3.0);
+  float orb = 1.0 - smoothstep(r, r + 0.04, d);
+  float glow = exp(-d * 6.0);
   vec3 bg = vec3(0.02, 0.02, 0.08) + vec3(1.0, 0.4, 0.1) * glow * 0.6;
-  vec3 orb = vec3(1.0, 0.6, 0.2) * (0.25 + 0.75 * z);
-  vec3 col = mix(bg, orb, m);
-  gl_FragColor = vec4(col, 1.0);
-}` },
-  { t: 'Swirling surface with noise', x: `[[fbm]] is natural-looking random blobs (0..1). Adding \`uTime\` to its input slides through the noise, so the pattern drifts. We multiply the orb colour by \`0.6 + 0.8 * n\`: the noise varies the brightness around 1. **Noise is how you stop things looking too perfect.**`,
-    code: `void main() {
-  vec2 p = vUv - 0.5;
-  float d = length(p);
-  float r = 0.28 + 0.03 * sin(uTime * 3.0);
-  float m = 1.0 - smoothstep(r, r + 0.04, d);
-  float q = d / (r + 0.02);
-  float z = sqrt(max(0.0, 1.0 - q * q));
-  float n = fbm(p * 9.0 + vec2(uTime * 0.4, 0.0));
-  float glow = exp(-d * 6.0) * (0.8 + 0.2 * sin(uTime * 3.0));
-  vec3 bg = vec3(0.02, 0.02, 0.08) + vec3(1.0, 0.4, 0.1) * glow * 0.6;
-  vec3 orb = vec3(1.0, 0.6, 0.2) * (0.25 + 0.75 * z) * (0.6 + 0.8 * n);
-  vec3 col = mix(bg, orb, m);
+  vec3 col = mix(bg, vec3(1.0, 0.6, 0.2), orb);
   gl_FragColor = vec4(col, 1.0);
 }` },
 ]);
 
-// ====================================================================== 3
+// ====================================================================== 5
 lesson('patterns', 'Repeating patterns: stripes, checkers, bricks', 'Beginner',
-  'The fract / floor trick that cuts space into tiles, and how to turn tiles into stripes, checkerboards, random colours and offset bricks.', [
-  { t: 'fract: a repeating ramp', x: `[[fract]](x) throws away the whole part and keeps the decimals: 1.7 → 0.7, 2.3 → 0.3. Feed it a growing number and you get a 0→1 ramp that **restarts** each time. \`vUv.x * 5.0\` grows from 0 to 5 across the picture, so the ramp repeats five times. This is the single most useful trick for patterns.`,
+  'The fract / floor trick that cuts space into tiles, then mod, random numbers (hash21) and min to make stripes, checkerboards and bricks.', [
+  { t: 'fract: a ramp that restarts', x: `You met [[fract]](x) in lesson 2: it keeps only the decimals (1.7 becomes 0.7, 4.0 becomes 0.0). Feed it a number that keeps growing and you get a **0 to 1 ramp that restarts over and over**. \`vUv.x * 5.0\` grows from 0 to 5 across the picture, so we get five ramps. This is the most useful trick in pattern making.`,
+    new: ['fract'], try: 'Change 5.0 to 2.0 or 10.0.',
     code: `void main() {
   float f = fract(vUv.x * 5.0);
   gl_FragColor = vec4(vec3(f), 1.0);
 }` },
-  { t: 'Stripes', x: `A ramp that repeats, cut with [[step]]: below 0.5 gives 0, above gives 1. Now you have hard stripes. Change 0.5 to change the stripe width, change 5.0 to change how many. For soft stripes use [[smoothstep]] instead of step.`,
+  { t: 'Stripes', x: `A ramp that repeats, cut with \`step\` (which you know): below 0.5 gives 0, from 0.5 up gives 1. That's **hard stripes**: half black, half white, five times.
+
+Change the \`0.5\` to change the stripe thickness, change the \`5.0\` to change how many.`,
+    try: 'Use vUv.y for horizontal stripes, or (vUv.x + vUv.y) for diagonal ones.',
     code: `void main() {
   float s = step(0.5, fract(vUv.x * 5.0));
   vec3 col = mix(vec3(0.1, 0.15, 0.3), vec3(0.95, 0.85, 0.5), s);
   gl_FragColor = vec4(col, 1.0);
 }` },
-  { t: 'Cut space into cells', x: `Do both together on a 2D position. \`floor(g)\` is the **whole part**: which cell am I in (0,0), (1,0), (2,0)... \`fract(g)\` is the **position inside** that cell, 0..1 in x and y. Here the cell's inner position is shown as red/green, so every cell contains a small copy of the UV lesson's picture.
+  { t: 'floor: which stripe am I in?', x: `[[floor]](x) is the other half: it **rounds down** to the whole number, 1.7 becomes 1.0, 4.9 becomes 4.0. Where \`fract\` tells you *where inside* the stripe you are, \`floor\` tells you *which* stripe.
 
-These two values are the basis of grids, tiles, bricks, hex patterns, random-per-cell effects and noise.`,
+Dividing by 5 at the end squeezes the whole numbers 0, 1, 2, 3, 4 into 0 to 0.8, so you can see them: a **staircase** with five flat steps.`,
+    new: ['floor'], try: 'Replace 5.0 with 10.0 (both places).',
+    code: `void main() {
+  float step5 = floor(vUv.x * 5.0) / 5.0;
+  gl_FragColor = vec4(vec3(step5), 1.0);
+}` },
+  { t: 'Cut space into cells', x: `Do both at once, on a 2D position. We scale by 6 so there are six cells across, then:
+
+\`floor(g)\` is **which cell** you are in: (0,0), (1,0), (2,0)...
+\`fract(g)\` is **where inside that cell**, from 0 to 1 in x and y.
+
+The picture shows \`f\` as red and green: each cell contains a small copy of the red-green square from the \`vUv\` lesson. These two values are the basis of grids, tiles, bricks and per-tile randomness.`,
+    try: 'Change 6.0 to 3.0 for fewer, bigger cells.',
     code: `void main() {
   vec2 g = vUv * 6.0;
   vec2 cell = floor(g);
   vec2 f = fract(g);
-  gl_FragColor = vec4(f, 0.0, 1.0);
+  gl_FragColor = vec4(f.x, f.y, 0.0, 1.0);
 }` },
-  { t: 'Checkerboard', x: `Add the cell numbers x + y: the result is even or odd like a chessboard. [[mod]](n, 2.0) is the remainder after dividing by two, so it is 0 for even and 1 for odd. (The built-in [[checker]] does exactly this.)`,
+  { t: 'mod: checkerboard', x: `[[mod]](a, b) is the **remainder** after dividing a by b: mod(5.0, 2.0) is 1.0, mod(6.0, 2.0) is 0.0. With b = 2 it flips between 0 and 1: **even, odd, even, odd**.
+
+Add the cell's x and y numbers together and take mod 2: neighbouring cells always differ by one, so they alternate like a chessboard.`,
+    new: ['mod'], try: 'Change 8.0 to 3.0 or 20.0.',
     code: `void main() {
-  vec2 g = vUv * 8.0;
-  vec2 cell = floor(g);
+  vec2 cell = floor(vUv * 8.0);
   float c = mod(cell.x + cell.y, 2.0);
   vec3 col = mix(vec3(0.15), vec3(0.9), c);
   gl_FragColor = vec4(col, 1.0);
 }` },
-  { t: 'A random value per cell', x: `[[hash21]] turns any 2D number into a random-looking 0..1 value, but the **same input always gives the same answer**. Feed it the cell number and every cell gets its own steady random value. Pass that to [[palette]] for a colour. The grout lines come from the distance to the nearest cell edge: \`min(f.x, 1.0 - f.x)\` is how close we are to the left or right edge.`,
+  { t: 'hash21: a random number per cell', x: `[[hash21]] takes a position (vec2) and gives back a **random-looking number between 0 and 1**. The same input always gives the same answer, but a slightly different input gives a completely unrelated one.
+
+Feed it the **cell number** (the whole numbers from \`floor\`) and every cell gets its own steady random grey. Remember: each pixel computes this alone, but pixels in the same cell have the same \`cell\` so they agree.`,
+    new: ['hash21'], try: 'Try 4.0 and 40.0 for different cell sizes.',
     code: `void main() {
-  vec2 g = vUv * 6.0;
-  vec2 cell = floor(g);
-  vec2 f = fract(g);
+  vec2 cell = floor(vUv * 8.0);
   float r = hash21(cell);
-  vec3 col = palette(r, vec3(0.5), vec3(0.5), vec3(1.0), vec3(0.0, 0.33, 0.67));
-  float edge = min(min(f.x, 1.0 - f.x), min(f.y, 1.0 - f.y));
-  col *= smoothstep(0.0, 0.06, edge);
+  gl_FragColor = vec4(vec3(r), 1.0);
+}` },
+  { t: 'Random colour per cell', x: `Three random numbers make a random colour. We shift the cell number by a different amount for each of r, g, b (\`cell + 1.0\` adds 1 to both parts) so that the three values are different from each other.
+
+The result is a patchwork of random colours. Nothing here is new: it is \`hash21\` three times.`,
+    try: 'Multiply the colour by 0.5 to darken it: vec4(col * 0.5, 1.0).',
+    code: `void main() {
+  vec2 cell = floor(vUv * 8.0);
+  vec3 col = vec3(hash21(cell), hash21(cell + 1.0), hash21(cell + 2.0));
   gl_FragColor = vec4(col, 1.0);
 }` },
-  { t: 'Bricks: shift every other row', x: `Bricks are a grid where every second row is slid half a brick sideways. We find the row number (\`floor(g.y)\`), and add 0.5 to x on odd rows (\`mod(row, 2.0)\` is 1 on odd rows). The scale numbers 8 and 16 make each brick twice as wide as it is tall.`,
+  { t: 'min: the smaller of two numbers', x: `[[min]](a, b) gives back **whichever is smaller**. Why is that useful? Take \`f\` (0 to 1 inside a cell). Its distance to the *left* edge is \`f\`, and to the *right* edge is \`1.0 - f\`. The distance to the **nearest** side is the smaller of the two.
+
+The result goes 0, up to 0.5 in the middle, back down to 0: a triangle wave, zero at every cell border.`,
+    new: ['min'], try: 'Multiply by 2.0 so the peak is white: vec3(edge * 2.0).',
+    code: `void main() {
+  float f = fract(vUv.x * 4.0);
+  float edge = min(f, 1.0 - f);
+  gl_FragColor = vec4(vec3(edge), 1.0);
+}` },
+  { t: 'Grid lines', x: `Do it for x **and** y, and take the \`min\` of those too: \`edge\` is now the distance to the **nearest border in any direction**, 0 on every grid line and bigger towards the cell centres.
+
+Cut it with \`smoothstep\` (0.0 to 0.06): the pixels very close to a border come out dark, everything else bright. **Grid lines**, from a distance and a smoothstep.`,
+    try: 'Change 0.06 for thicker or thinner lines.',
+    code: `void main() {
+  vec2 f = fract(vUv * 6.0);
+  float edge = min(min(f.x, 1.0 - f.x), min(f.y, 1.0 - f.y));
+  float line = smoothstep(0.0, 0.06, edge);
+  gl_FragColor = vec4(vec3(line), 1.0);
+}` },
+  { t: 'Bricks: shift every other row', x: `Bricks are a grid where every second row is slid half a brick sideways. We find the row number with \`floor(g.y)\`, and for **odd rows** (\`mod(row, 2.0)\` is 1) we add 0.5 to x. The 8 and 16 make each brick twice as wide as tall.
+
+The rest is the grid-lines recipe: the border distance (\`edge\`), smoothstep for the mortar, \`hash21\` to vary each brick's colour a little, and \`mix\` to put mortar and brick together.`,
+    try: 'Change the brick colour vec3(0.7, 0.3, 0.2), or 8.0 / 16.0.',
     code: `void main() {
   vec2 g = vec2(vUv.x * 8.0, vUv.y * 16.0);
   float row = floor(g.y);
-  g.x += 0.5 * mod(row, 2.0);
+  g.x = g.x + 0.5 * mod(row, 2.0);
   vec2 cell = floor(g);
   vec2 f = fract(g);
-  float r = hash21(cell);
-  vec3 col = mix(vec3(0.65, 0.25, 0.15), vec3(0.8, 0.4, 0.25), r);
   float edge = min(min(f.x, 1.0 - f.x), min(f.y, 1.0 - f.y));
-  col = mix(vec3(0.75), col, smoothstep(0.03, 0.08, edge));
-  gl_FragColor = vec4(col, 1.0);
+  float brick = smoothstep(0.03, 0.08, edge);
+  vec3 clay = vec3(0.7, 0.3, 0.2) * (0.7 + 0.5 * hash21(cell));
+  gl_FragColor = vec4(mix(vec3(0.8), clay, brick), 1.0);
 }` },
-  { t: 'Move it', x: `Animation again: add time to the coordinate before cutting it up. Here the odd rows slide one way and the even rows the other (\`mod(row, 2.0) * 2.0 - 1.0\` is -1 or +1). Because everything downstream uses \`g\`, the whole pattern follows. **Change the input coordinate and every later step follows.** Hover to see it move.`,
+  { t: 'Make it move', x: `Animation is the same as always: **add \`uTime\` to the coordinate before cutting it up**. Here one line is added: \`g.x\` also moves by \`uTime * 0.4\`. Every later step uses \`g\`, so the whole wall slides. Watch it slide.`,
+    try: 'Make odd and even rows move in opposite directions: add uTime * 0.4 only when mod(row, 2.0) is 1 by changing the multiply.',
     code: `void main() {
   vec2 g = vec2(vUv.x * 8.0, vUv.y * 16.0);
   float row = floor(g.y);
-  float dir = mod(row, 2.0) * 2.0 - 1.0;
-  g.x += 0.5 * mod(row, 2.0) + uTime * 0.4 * dir;
+  g.x = g.x + 0.5 * mod(row, 2.0) + uTime * 0.4;
   vec2 cell = floor(g);
   vec2 f = fract(g);
-  float r = hash21(cell);
-  vec3 col = mix(vec3(0.65, 0.25, 0.15), vec3(0.8, 0.4, 0.25), r);
   float edge = min(min(f.x, 1.0 - f.x), min(f.y, 1.0 - f.y));
-  col = mix(vec3(0.75), col, smoothstep(0.03, 0.08, edge));
-  gl_FragColor = vec4(col, 1.0);
+  float brick = smoothstep(0.03, 0.08, edge);
+  vec3 clay = vec3(0.7, 0.3, 0.2) * (0.7 + 0.5 * hash21(cell));
+  gl_FragColor = vec4(mix(vec3(0.8), clay, brick), 1.0);
 }` },
 ]);
 
-// ====================================================================== 4
-lesson('colour', 'Colour: mixing, ramps, palettes and tone', 'Beginner',
-  'How colours are numbers, how to blend and shape them, and how to find a nice colour scheme without guessing.', [
-  { t: 'Colour is three numbers', x: `\`vec3(r, g, b)\`, each 0..1, no upper limit enforced (values above 1 simply look white, but they matter for glows). Equal parts give grey, \`vec3(1,0,0)\` is red, and light **adds**: red + green = yellow. Drag the numbers below. Hint: for a natural colour, nudge one number at a time.`,
+// ====================================================================== 6
+lesson('noise', 'Noise: natural randomness', 'Beginner',
+  'Smooth random patterns for clouds, rock and terrain: noise, fbm, voronoi, and working in 3D with vPos.', [
+  { t: 'Random is not enough', x: `Last lesson, \`hash21\` gave a random number per cell: sharp squares, no relation to each other. Making it finer (more, smaller cells) gives **static**, like a TV with no signal. Real things (clouds, dirt, wood) are random *but smooth*: nearby points are similar.`,
+    try: 'Change 40.0 to 6.0 (big squares) and to 200.0 (static).',
     code: `void main() {
-  vec3 col = vec3(1.0, 0.5, 0.2);
+  float r = hash21(floor(vUv * 40.0));
+  gl_FragColor = vec4(vec3(r), 1.0);
+}` },
+  { t: 'noise: smooth random', x: `[[noise]](p) gives a **smooth random number between 0 and 1** for a position. Nearby positions give similar values, so you get soft random blobs. The number you multiply \`vUv\` by is how many blobs fit across: 8.0 means about 8 blobs.
+
+It is the base of clouds, dirt, stains and wood.`,
+    new: ['noise'], try: 'Change 8.0 to 3.0 (a few big blobs) and to 30.0.',
+    code: `void main() {
+  float n = noise(vUv * 8.0);
+  gl_FragColor = vec4(vec3(n), 1.0);
+}` },
+  { t: 'fbm: noise with detail', x: `[[fbm]] (fractal noise) adds several layers of noise on top of each other: each layer twice as detailed and half as strong. You get big blobs **plus** smaller bumps, **plus** fine grain, which looks a lot more natural than plain noise.
+
+It's used exactly the same way: \`fbm(p)\` gives a number from 0 to 1 for a position.`,
+    new: ['fbm'], try: 'Compare with the previous step: same number, much more detail.',
+    code: `void main() {
+  float n = fbm(vUv * 8.0);
+  gl_FragColor = vec4(vec3(n), 1.0);
+}` },
+  { t: 'Animate noise', x: `You already know how to move things: **add \`uTime\` to the position**. Here only x is shifted over time (the vec2 is x, then y = 0), so the noise slides sideways. If you also change y, it drifts diagonally; **if you add time in a way that changes the pattern** instead of sliding it, you get "boiling" shapes like fire or clouds.`,
+    try: 'Slide it in y instead: vec2(0.0, uTime * 0.3).',
+    code: `void main() {
+  float n = fbm(vUv * 8.0 + vec2(uTime * 0.3, 0.0));
+  gl_FragColor = vec4(vec3(n), 1.0);
+}` },
+  { t: 'Noise as a mask', x: `Noise is just a 0 to 1 number, so everything from the shapes lesson works on it. Cut it with \`smoothstep\` to get a **mask**, then \`mix\` two colours with the mask:
+below 0.45 is water, above 0.55 is land, and in between a soft shore. A map with three lines of code.`,
+    try: 'Change 0.45 and 0.55 (move them both up for less land). Change the colours.',
+    code: `void main() {
+  float n = fbm(vUv * 6.0);
+  float land = smoothstep(0.45, 0.55, n);
+  vec3 col = mix(vec3(0.1, 0.3, 0.7), vec3(0.3, 0.7, 0.3), land);
   gl_FragColor = vec4(col, 1.0);
 }` },
-  { t: 'A gradient from two colours', x: `[[mix]](a, b, t) with \`t\` = a coordinate fades from a to b. Because \`mix\` works on all three channels at once, it works on colours exactly like numbers.`,
+  { t: 'voronoi: cells', x: `[[voronoi]] scatters a random point in every cell of a grid and, for each pixel, finds the **nearest point**. It returns a vec3, and we take its first part \`.x\`: the **distance to the nearest point**.
+
+Result: dark at every point, brighter away from it, a *pattern of cells* like stones, scales, cracked mud or water caustics.`,
+    new: ['voronoi'], try: 'Change 6.0 to get more or fewer cells.',
+    code: `void main() {
+  float d = voronoi(vUv * 6.0).x;
+  gl_FragColor = vec4(vec3(d), 1.0);
+}` },
+  { t: 'voronoi: cell borders', x: `The second part of the result, \`.y\`, is the **distance to the nearest border between two cells** (0 on the border, bigger inside). Cut it with \`smoothstep\` exactly like grid lines: dark thin lines between cells.
+
+\`.x\` and \`.y\` are the same x/y slots you already know, here on a vec3 the **function** returned.`,
+    try: 'Change 0.08 for thicker or thinner cracks.',
+    code: `void main() {
+  float border = voronoi(vUv * 6.0).y;
+  float line = smoothstep(0.0, 0.08, border);
+  gl_FragColor = vec4(vec3(line), 1.0);
+}` },
+  { t: '3D: the seam problem', x: `So far we used \`vUv\` which is a flat sheet. On a **sphere** it gets wrapped round, and where the left edge meets the right edge, the noise doesn't match: **a visible seam**. Spin the shape in the big preview and look for the vertical line. (This picture is also on a sphere.)`,
+    shape: true, try: 'Drag the sphere around to find the seam.',
+    code: `void main() {
+  float n = fbm(vUv * 8.0);
+  gl_FragColor = vec4(vec3(n), 1.0);
+}` },
+  { t: 'vPos and fbm3: noise with no seam', x: `[[vPos]] is the pixel's **3D position** on the object, (x, y, z). [[fbm3]] is fbm for a 3D position. Because every point of the sphere has a position in 3D space, the noise is continuous everywhere: **no seam**.
+
+Use \`vUv\` for patterns that belong on a flat face (bricks, stripes), \`vPos\` with the 3D noise functions for natural materials (rock, marble, planets).`,
+    new: ['vPos', 'fbm3'], shape: true, try: 'Change 3.0 to get bigger or smaller blobs.',
+    code: `void main() {
+  float n = fbm3(vPos * 3.0);
+  gl_FragColor = vec4(vec3(n), 1.0);
+}` },
+], false);
+
+// ====================================================================== 7
+lesson('colour', 'Colour: ramps, palettes and tone', 'Beginner',
+  'Gradients and multi-colour ramps, then pow, palette, hsv2rgb and luma for shaping and choosing colours.', [
+  { t: 'A gradient from two colours', x: `You met \`mix\`; with a coordinate as \`t\`, the colour fades from a to b. \`mix\` works on the three parts together, so colours behave just like numbers.`,
+    try: 'Change the two colours.',
     code: `void main() {
   vec3 a = vec3(0.05, 0.1, 0.35);
   vec3 b = vec3(1.0, 0.6, 0.3);
   vec3 col = mix(a, b, vUv.y);
   gl_FragColor = vec4(col, 1.0);
 }` },
-  { t: 'Shape the ramp', x: `The t does not have to be straight. [[smoothstep]](0.3, 0.7, y) keeps the bottom third pure colour A, the top third pure colour B, and makes the transition in the middle. [[pow]](t, 2.0) bends the ramp so the change happens late. Anything you can do to a number, you can do to t. Look at the line preview on the \`float t\` line to see the curve itself.`,
+  { t: 'Shape the ramp', x: `\`t\` doesn't have to be the raw coordinate. With \`smoothstep(0.3, 0.7, y)\` the bottom third stays pure a, the top third is pure b, and the change happens in the middle. Anything you can do to a number, you can do to \`t\`.
+
+Click the \`float t\` line and look at the line preview on the right: that's the curve itself.`,
+    try: 'Change 0.3 and 0.7 to 0.0 and 1.0, or to 0.45 and 0.55.',
     code: `void main() {
   vec3 a = vec3(0.05, 0.1, 0.35);
   vec3 b = vec3(1.0, 0.6, 0.3);
   float t = smoothstep(0.3, 0.7, vUv.y);
-  vec3 col = mix(a, b, t);
-  gl_FragColor = vec4(col, 1.0);
+  gl_FragColor = vec4(mix(a, b, t), 1.0);
 }` },
-  { t: 'More than two colours', x: `Chain mixes: first blend a→b over the lower half, then blend that result with c over the upper half. Each \`smoothstep\` owns a section of the range. This is how sky, sunset and fire gradients are made.`,
+  { t: 'pow: bend a number', x: `[[pow]](x, p) raises x to the power p. For x between 0 and 1: **p above 1 pushes values down** (the middle gets darker, 0 and 1 stay put), **p below 1 pushes them up**. The ramp below bends so that the colour change happens late.
+
+Try it on any 0 to 1 value you don't like the feel of.`,
+    new: ['pow'], try: 'Change 3.0 to 0.3 to bend it the other way.',
+    code: `void main() {
+  vec3 a = vec3(0.05, 0.1, 0.35);
+  vec3 b = vec3(1.0, 0.6, 0.3);
+  float t = pow(vUv.y, 3.0);
+  gl_FragColor = vec4(mix(a, b, t), 1.0);
+}` },
+  { t: 'Three colours', x: `Chain two \`mix\` calls. First blend a to b with a \`smoothstep\` that handles the lower half; then blend *that result* with c using a second \`smoothstep\` for the upper half. This is how sunsets, skies and fire gradients are made.`,
+    try: 'Change the middle colour b.',
     code: `void main() {
   vec3 a = vec3(0.02, 0.03, 0.15);
   vec3 b = vec3(0.9, 0.3, 0.25);
   vec3 c = vec3(1.0, 0.85, 0.5);
-  float t = vUv.y;
-  vec3 col = mix(a, b, smoothstep(0.0, 0.5, t));
-  col = mix(col, c, smoothstep(0.5, 1.0, t));
+  vec3 col = mix(a, b, smoothstep(0.0, 0.5, vUv.y));
+  col = mix(col, c, smoothstep(0.5, 1.0, vUv.y));
   gl_FragColor = vec4(col, 1.0);
 }` },
-  { t: 'Cosine palettes', x: `Picking pleasant colours by hand is hard. [[palette]](t, a, b, c, d) makes a whole smooth rainbow from four vec3 numbers: \`a + b * cos(TAU * (c * t + d))\`. **a** is the average colour, **b** the amount of swing, **c** how fast each channel cycles, **d** the offset of each channel. Try changing the last vec3 to \`vec3(0.0, 0.1, 0.2)\` for a blue/orange scheme.`,
+  { t: 'palette: a whole colour scheme from numbers', x: `Choosing colours by hand is hard. [[palette]](t, a, b, c, d) makes a smooth rainbow-like ramp from four vec3 numbers: it computes \`a + b * cos(TAU * (c * t + d))\`, a wave per colour channel.
+
+**a** is the average colour, **b** the amount of swing, **c** how fast each channel cycles, **d** where each channel starts. The four values here give the classic rainbow. You don't need to understand the formula, just change numbers and see.`,
+    new: ['palette'], try: 'Change the last vec3 to vec3(0.0, 0.1, 0.2) for a blue/orange scheme.',
     code: `void main() {
-  float t = vUv.x;
-  vec3 col = palette(t, vec3(0.5), vec3(0.5), vec3(1.0), vec3(0.0, 0.33, 0.67));
+  vec3 col = palette(vUv.x, vec3(0.5), vec3(0.5), vec3(1.0), vec3(0.0, 0.33, 0.67));
   gl_FragColor = vec4(col, 1.0);
 }` },
-  { t: 'Hue, saturation, value', x: `RGB is awkward for thinking like a painter. [[hsv2rgb]] takes **hue** (which colour, 0..1 round the wheel), **saturation** (0 = grey, 1 = vivid) and **value** (0 = black, 1 = bright). Here hue goes across, saturation goes up. To shift a colour's hue only, convert with [[rgb2hsv]], add to the hue, convert back.`,
+  { t: 'hsv2rgb: pick colours like a painter', x: `RGB is awkward when you think "a bit more blue-green". [[hsv2rgb]] takes **hue** (which colour, 0 to 1 round the colour wheel), **saturation** (0 grey, 1 vivid) and **value** (0 black, 1 bright) and gives back an RGB colour.
+
+Here hue goes across, saturation goes up, value is full.`,
+    new: ['hsv2rgb'], try: 'Replace vUv.y with 1.0 for the pure rainbow, or put it in the last slot to dim it.',
     code: `void main() {
   vec3 col = hsv2rgb(vec3(vUv.x, vUv.y, 1.0));
   gl_FragColor = vec4(col, 1.0);
 }` },
-  { t: 'Contrast and curves with pow', x: `[[pow]](x, p) bends brightness: p above 1 darkens the middle tones and pushes things towards black; below 1 brightens them. It keeps 0 and 1 where they are. Raising to 2.2 or 1/2.2 converts between "linear" and "screen" brightness (gamma). If a picture looks washed out or too dark, try a pow before anything else.`,
-    code: `void main() {
-  vec3 col = palette(vUv.x, vec3(0.5), vec3(0.5), vec3(1.0), vec3(0.0, 0.33, 0.67));
-  col = pow(col, vec3(1.0 + vUv.y * 2.0));
-  gl_FragColor = vec4(col, 1.0);
-}` },
-  { t: 'Grey and saturation with luma', x: `[[luma]] is how bright a colour looks to the eye (green counts more than blue). \`vec3(luma(col))\` is the grey version. Mixing between the grey and the colour with a number above 1 **over-saturates**, below 1 drains the colour. The top half of this picture is boosted, the bottom half washed out.`,
+  { t: 'luma: how bright does it look?', x: `[[luma]](colour) is **how bright a colour looks to the eye** (green counts for much more than blue). \`vec3(luma(col))\` is the grey version of the colour.
+
+\`mix(grey, col, amount)\` then blends between grey (amount 0) and the colour (1). Above 1 *over-saturates*. Here the amount goes from 0 at the bottom (grey) to 2 at the top (extra vivid).`,
+    new: ['luma'], try: 'Replace vUv.y * 2.0 with 0.0 for a full greyscale version.',
     code: `void main() {
   vec3 col = palette(vUv.x, vec3(0.5), vec3(0.5), vec3(1.0), vec3(0.0, 0.33, 0.67));
   vec3 grey = vec3(luma(col));
   col = mix(grey, col, vUv.y * 2.0);
-  gl_FragColor = vec4(saturate(col), 1.0);
+  gl_FragColor = vec4(col, 1.0);
 }` },
 ]);
 
-// ====================================================================== 5
+// ====================================================================== 8
+lesson('dirs', 'Directions, angles and the dot product', 'Intermediate',
+  'normalize, dot, max and atan: the vector tools that lighting and radial patterns are built from.', [
+  { t: 'normalize: keep the direction, drop the length', x: `A vec2 has two properties: a **direction** it points, and a **length**. [[normalize]](v) gives you a vector pointing the **same way but with length exactly 1**. Lots of things need "just the direction": which way a surface faces, where the light comes from.
+
+The picture shows the direction of every pixel as seen from the middle. A direction has parts between -1 and 1, so we squash it into colour range with \`* 0.5 + 0.5\` (the same trick as with \`sin\`).`,
+    new: ['normalize'], try: 'The four directions each get their own colour: right is red-ish, up is green-ish.',
+    code: `void main() {
+  vec2 p = vUv - 0.5;
+  vec2 dir = normalize(p);
+  gl_FragColor = vec4(dir * 0.5 + 0.5, 0.5, 1.0);
+}` },
+  { t: 'dot: how much do two directions agree?', x: `[[dot]](a, b) is a single number that says **how much two vectors point the same way**. For two directions (length 1): **1** = identical, **0** = at right angles, **-1** = opposite.
+
+Here every pixel's position is compared with a fixed direction (pointing right and a bit up). Pixels far along that direction are bright, those behind are dark, with the middle line at 0. (The \`* 0.5 + 0.5\` shows the negative side too.) **Light brightness is exactly this**: the surface direction compared with the light direction.`,
+    new: ['dot'], try: 'Change vec2(1.0, 0.5) to vec2(0.0, 1.0): now it measures "how far up".',
+    code: `void main() {
+  vec2 p = (vUv - 0.5) * 2.0;
+  vec2 dir = normalize(vec2(1.0, 0.5));
+  float s = dot(p, dir);
+  gl_FragColor = vec4(vec3(s * 0.5 + 0.5), 1.0);
+}` },
+  { t: 'max: cut off the negative part', x: `[[max]](a, b) gives the **larger** of two numbers. \`max(s, 0.0)\` means "s, but never below 0": it clips off the negative side. In the last picture the dark half was negative; with \`max\` it becomes plain 0 (black) and only the part that agrees with the direction stays.
+
+You'll use this for light: the side of an object facing away from the light must be 0 (no light), not negative.`,
+    new: ['max'], try: 'Replace 0.0 with 0.5 to raise the floor.',
+    code: `void main() {
+  vec2 p = (vUv - 0.5) * 2.0;
+  vec2 dir = normalize(vec2(1.0, 0.5));
+  float s = max(dot(p, dir), 0.0);
+  gl_FragColor = vec4(vec3(s), 1.0);
+}` },
+  { t: 'atan: the angle around the middle', x: `Any position can also be described as **an angle around the middle and a distance from it**. [[atan]](y, x) gives the angle in *radians* from the right-hand direction, between about -3.14 and 3.14. Dividing by \`TAU\` (a built-in number, 6.28, one full turn) makes it -0.5 to 0.5, and adding 0.5 makes it 0 to 1 all the way round.
+
+Angle turns into a grey: a sweep like a radar.`,
+    new: ['atan', 'TAU'], try: 'Multiply the angle by 4.0 before showing it (inside the vec3) and watch it repeat 4 times.',
+    code: `void main() {
+  vec2 p = vUv - 0.5;
+  float a = atan(p.y, p.x) / TAU + 0.5;
+  gl_FragColor = vec4(vec3(a), 1.0);
+}` },
+  { t: 'Angle and distance together', x: `Use the angle as the **hue** and the distance to darken: a colour wheel. Polar thinking (angle + distance) is how you make stars, flowers, spirals and radial patterns: any time the pattern repeats *around* a point instead of across.`,
+    try: 'Change 1.0 - d * 1.5 to 1.0 for a flat colour wheel.',
+    code: `void main() {
+  vec2 p = vUv - 0.5;
+  float a = atan(p.y, p.x) / TAU + 0.5;
+  float d = length(p);
+  vec3 col = hsv2rgb(vec3(a, 0.8, 1.0 - d * 1.5));
+  gl_FragColor = vec4(col, 1.0);
+}` },
+]);
+
+// ====================================================================== 9
 lesson('light', 'How lighting works, built by hand', 'Intermediate',
-  'Normals, diffuse light, ambient light, shiny highlights and rim light, written out yourself so `finish()` is no longer magic.', [
-  { t: 'The surface normal', x: `Lighting is all about which way the surface faces. The **normal** is an arrow of length 1 pointing straight out of the surface: [[surfNormal]](). Its x, y, z run -1..1, so \`n * 0.5 + 0.5\` squeezes it into colour range. Red = faces right (+x), green = faces up (+y), blue = faces you-ish (+z). Spin the shape and watch the colours stay on the world's axes.`,
+  'Surface normals, diffuse light, ambient light, shiny highlights and rim light, written out yourself so finish() is no longer magic.', [
+  { t: 'The surface normal', x: `Lighting is about **which way the surface faces**. The **normal** is an arrow of length 1 pointing straight out of the surface; [[surfNormal]]() gives you the normal of the pixel's bit of surface. Its x, y, z run -1 to 1, so \`* 0.5 + 0.5\` squeezes it into colour range.
+
+Red = faces right, green = faces up, blue = faces towards you. This picture is on the 3D shape: orbit it in the preview.`,
+    new: ['surfNormal'], shape: true, try: 'Change the shape in the preview: a cube has flat sides, so each side is one flat colour.',
     code: `void main() {
   vec3 n = surfNormal();
   gl_FragColor = vec4(n * 0.5 + 0.5, 1.0);
-}`, shape: true },
-  { t: 'Diffuse light', x: `Light hits hardest where the surface faces it. [[dot]](n, L) of two unit vectors is 1 when they point the same way, 0 when they are sideways, negative when opposite. \`uLightDir\` is the direction towards the sun (change it in the Scene tab). [[max]](..., 0.0) clips the negative part (the unlit side). That's **Lambert** diffuse lighting, one of the oldest tricks in graphics.`,
+}` },
+  { t: 'Diffuse light: dot with the light direction', x: `[[uLightDir]] is a built-in arrow (length 1) pointing **towards the sun**. You can move the sun in the Scene tab. How much a surface is lit is how much its normal agrees with the light direction: that's \`dot(n, uLightDir)\`. \`max(..., 0.0)\` cuts off the negative part, so the shaded side is simply 0.
+
+This one line is the classic **diffuse** (Lambert) lighting.`,
+    new: ['uLightDir'], shape: true, try: 'Open the Scene tab and move the sun with the sliders.',
     code: `void main() {
   vec3 n = surfNormal();
   float diff = max(dot(n, uLightDir), 0.0);
-  vec3 albedo = vec3(0.9, 0.5, 0.3);
-  gl_FragColor = vec4(albedo * diff, 1.0);
-}`, shape: true },
-  { t: 'Ambient light', x: `In real life the dark side isn't black: light bounces everywhere. Add a base level. \`uAmbSky\` and \`uAmbGround\` are the colours of light from above and from below; \`mix\`-ing by \`n.y\` (up/down component of the normal) gives a soft sky-to-ground tint. Total light = ambient + sun × diffuse. The albedo (surface colour) multiplies all of it.`,
+  gl_FragColor = vec4(vec3(diff), 1.0);
+}` },
+  { t: 'Surface colour and ambient light', x: `Multiply the light by a colour (the **albedo**, the colour of the surface itself) and the grey becomes orange. But the shaded side is pitch black, and in real life light bounces everywhere. So we add a base level, **ambient light**.
+
+[[uAmbSky]] and [[uAmbGround]] are the colour of the light from above and from below; \`mix\` picks between them by the normal's up/down part (\`n.y\`, squashed to 0 to 1). [[uLightCol]] is the colour of the sun. Total light = ambient + sun × diffuse.`,
+    new: ['uAmbSky', 'uAmbGround', 'uLightCol'], shape: true, try: 'Change the albedo vec3(0.9, 0.5, 0.3) to a colour you like.',
     code: `void main() {
   vec3 n = surfNormal();
   float diff = max(dot(n, uLightDir), 0.0);
@@ -2549,8 +2948,11 @@ lesson('light', 'How lighting works, built by hand', 'Intermediate',
   vec3 light = amb + uLightCol * diff;
   vec3 albedo = vec3(0.9, 0.5, 0.3);
   gl_FragColor = vec4(albedo * light * 0.85, 1.0);
-}`, shape: true },
-  { t: 'Specular highlight', x: `Shiny things show the light as a bright spot, where the surface mirrors the sun towards your eye. The **half vector** \`h\` lies halfway between the light direction and the view direction ([[viewDir]]); when the normal lines up with \`h\`, you see the glint. \`pow(..., 60.0)\` shrinks the highlight: bigger power = smaller, sharper spot (this is [[blinn]]). The highlight is **added** (it's reflected light, not tinted by the surface colour).`,
+}` },
+  { t: 'A shiny highlight', x: `Shiny things show the light as a bright spot where the surface mirrors the sun into your eye. [[viewDir]]() is the direction from the surface towards the camera. The **half vector** is halfway between the light direction and the view direction (add them, then \`normalize\`). When the normal lines up with it, you see the glint.
+
+\`pow(..., 60.0)\` makes the spot small: bigger power = smaller, sharper highlight. The highlight is **added** on top (it's reflected light, not tinted by the surface).`,
+    new: ['viewDir'], shape: true, try: 'Change 60.0 to 10.0 (a broad glow) or 300.0 (a pin-prick).',
     code: `void main() {
   vec3 n = surfNormal();
   vec3 v = viewDir();
@@ -2561,60 +2963,70 @@ lesson('light', 'How lighting works, built by hand', 'Intermediate',
   vec3 albedo = vec3(0.9, 0.5, 0.3);
   vec3 col = albedo * (amb + uLightCol * diff) * 0.85 + uLightCol * spec * 0.6;
   gl_FragColor = vec4(col, 1.0);
-}`, shape: true },
-  { t: 'Rim light with fresnel', x: `At glancing angles every surface becomes more reflective (look at a lake at your feet vs far away). [[fresnel]](n, v, power) is 0 where you look straight at the surface and rises to 1 at the silhouette. Used as a mask for a bluish sky glow it gives that classic soft rim. Higher power = thinner rim.`,
+}` },
+  { t: 'Rim light with fresnel', x: `At glancing angles every surface gets more reflective (look at a lake at your feet vs far away). [[fresnel]](n, v, power) is **0 where you look straight at the surface and rises to 1 at the silhouette**. Used as a mask for a bluish glow, it gives the classic soft rim. Higher power = thinner rim.`,
+    new: ['fresnel'], shape: true, try: 'Change 3.0 to 1.0 (a wide rim) or 8.0 (a thin one).',
     code: `void main() {
   vec3 n = surfNormal();
   vec3 v = viewDir();
   float diff = max(dot(n, uLightDir), 0.0);
   vec3 amb = mix(uAmbGround, uAmbSky, n.y * 0.5 + 0.5);
-  vec3 h = normalize(uLightDir + v);
-  float spec = pow(max(dot(n, h), 0.0), 60.0);
-  float rim = fresnel(n, v, 3.0);
   vec3 albedo = vec3(0.9, 0.5, 0.3);
-  vec3 col = albedo * (amb + uLightCol * diff) * 0.85 + uLightCol * spec * 0.6;
-  col += vec3(0.4, 0.6, 1.0) * rim * 0.5;
+  vec3 col = albedo * (amb + uLightCol * diff) * 0.85;
+  col = col + vec3(0.4, 0.6, 1.0) * fresnel(n, v, 3.0) * 0.5;
   gl_FragColor = vec4(col, 1.0);
-}`, shape: true },
-  { t: 'Let finish() do it', x: `Everything above is what [[finish]] does for you, plus extras. So in normal shaders you only decide the **albedo** (surface colour) and optionally \`gShine\` (0..1 shininess) and \`gRough\`. Writing your own lighting is only needed for unusual looks (toon, rim, custom reflections). Compare this picture with the previous one.`,
+}` },
+  { t: 'Let finish() do all of that', x: `[[finish]](colour, alpha) does the lighting for you: ambient, sun, plus extras. In normal shaders you only decide the **albedo** (surface colour) and call \`finish\` on the last line.
+
+Two extra settings you can assign before calling it: [[gShine]] (0 to 1, how bright the highlight is) and [[gRough]] (how wide it is, lower = tighter). Writing your own lighting, as we just did, is only needed for unusual looks (toon shading, custom rims).`,
+    new: ['finish', 'gShine', N('gRough', 'float gRough', 'How wide and dull the highlight is: 0 is small and hard, 1 is wide and soft.')], shape: true, try: 'Set gShine to 0.0 for a matte look, or gRough to 0.8.',
     code: `void main() {
   vec3 albedo = vec3(0.9, 0.5, 0.3);
   gShine = 1.0;
   gRough = 0.3;
   gl_FragColor = finish(albedo, 1.0);
-}`, shape: true },
+}` },
 ], true);
 
-// ====================================================================== 6
+// ====================================================================== 10
 lesson('bump', 'Bump maps: fake surface detail', 'Intermediate',
-  'How a grey height picture becomes dents and bumps, how to control strength, and how to combine it with colour to get the result you want.', [
-  { t: 'The idea', x: `Real bumps would need millions of triangles. A **bump map** fakes them: you give a **height** for every point (white = high, black = low) and the shader tilts the **normal** according to the slope of that height. Lighting then reacts as if the surface really had bumps, but the outline stays smooth.
+  'How a grey height picture becomes dents and bumps; strength, shine, and combining it with colour.', [
+  { t: 'The idea: a bump map is a grey height picture', x: `Real bumps would need millions of triangles. A **bump map** fakes them: you give a **height** for every point (white = high, black = low) and the shader tilts the **normal** (lesson 9) according to the *slope* of that height. Lighting then reacts as if there were bumps, but the silhouette stays smooth.
 
-So a bump map is just a greyscale picture. Any pattern that gives a number works: noise, stripes, bricks, cells. First look at the height by itself. It shows as a flat grey pattern with no depth: the light doesn't know about it yet.`,
+So a bump map is just a greyscale picture: any number from 0 to 1 works (noise, stripes, bricks...). Here is such a height by itself. It shows as a flat grey pattern with no depth, because the lighting doesn't know about it yet.`,
+    shape: true, try: 'Change 6.0 to get bigger or smaller lumps.',
     code: `void main() {
   float h = fbm3(vPos * 6.0);
   gl_FragColor = vec4(vec3(h), 1.0);
-}`, shape: true },
-  { t: 'Turn height into a normal', x: `[[bumpFromHeight]](h, strength) measures how fast the height changes across the screen (with screen derivatives, [[dFdx]]) and bends the normal against the slope. Store it in \`gNormal\`, set \`gHasN = 1.0\` to tell [[finish]] to use it, and the lighting now shows bumps. The sphere's silhouette stays perfectly round.
+}` },
+  { t: 'bumpFromHeight: height becomes a normal', x: `[[bumpFromHeight]](h, strength) measures how steeply the height changes across the screen and tilts the normal against the slope. Three things to do:
 
-Use [[fbm3]](\`vPos\` …) for noise that wraps seamlessly around a 3D shape; \`fbm(vUv …)\` shows a seam on spheres.`,
+**1.** store the result in [[gNormal]] (the normal \`finish\` will use),
+**2.** set [[gHasN]] to 1.0 to tell \`finish\` "use my normal",
+**3.** use \`finish\` for the final colour (so lighting is applied).
+
+The sphere now looks lumpy, but its outline is still perfectly round.`,
+    new: ['bumpFromHeight', 'gNormal', N('gHasN', 'float gHasN', 'Set it to 1.0 to tell finish() to use your gNormal instead of the real surface normal.')], shape: true, try: 'Change 0.08 (the strength) to 0.01 and then to 0.3.',
     code: `void main() {
   float h = fbm3(vPos * 6.0);
   gNormal = bumpFromHeight(h, 0.08);
   gHasN = 1.0;
   gl_FragColor = finish(vec3(0.7), 1.0);
-}`, shape: true },
-  { t: 'Strength', x: `The second number is the **strength**. Too low = invisible, too high = harsh. It depends on how fast your height changes: a height that rises by 1.0 over a tiny distance has steep slopes. Drag the slider in the **Uniforms** tab (this shader declares \`uBump\`) and watch. Typical values in this studio: 0.03 to 0.15.
+}` },
+  { t: 'A slider for the strength: uniform', x: `The strength is a number you'll want to tweak. A line starting with \`uniform\` at the top creates a **control**: \`uniform float uBump;\` gives a slider in the **Uniforms** tab. The comment after it sets the starting value and the range: \`// 0.08 [0, 0.3]\`.
 
-If you can't see the bumps at all, either the strength is too small or the height barely varies. Check the height on its own with the line preview on the \`float h\` line.`,
+Use \`uBump\` like any other number (it's a uniform, so every pixel gets the same value). Typical strengths in this studio: 0.03 to 0.15.`,
+    new: [N('uniform', 'uniform float uName; // 0.5 [0, 2]', 'A number you can change with a slider in the Uniforms tab. The comment gives the start value and [min, max].')],
+    shape: true, try: 'Open the Uniforms tab and drag the slider.',
     code: `uniform float uBump; // 0.08 [0, 0.3]
 void main() {
   float h = fbm3(vPos * 6.0);
   gNormal = bumpFromHeight(h, uBump);
   gHasN = 1.0;
   gl_FragColor = finish(vec3(0.7), 1.0);
-}`, shape: true },
-  { t: 'Shine shows bumps best', x: `A matte surface hides bumps. A shiny one makes the highlights wobble over them. [[finish]] adds a highlight when you set \`gShine\` to a value above 0 (more = brighter). \`gRough\` decides how big and soft the highlight is (lower = smaller, tighter). Wet, polished or plastic things want a low roughness; dry rock a high one with little shine.`,
+}` },
+  { t: 'Shine shows bumps best', x: `A matte surface hides bumps; a shiny surface lets the highlight wobble over them. Set \`gShine\` above 0 before \`finish\` to get a highlight, and a lower \`gRough\` for a tighter one. Wet, polished or plastic things want shine and low roughness; dry rock wants little.`,
+    shape: true, try: 'Set gShine = 0.0 and look at how the bumps hide.',
     code: `uniform float uBump; // 0.08 [0, 0.3]
 void main() {
   float h = fbm3(vPos * 6.0);
@@ -2623,20 +3035,22 @@ void main() {
   gShine = 1.0;
   gRough = 0.25;
   gl_FragColor = finish(vec3(0.2, 0.55, 0.45), 1.0);
-}`, shape: true },
-  { t: 'Colour from height too', x: `The same height can drive colour. Real crevices are darker (less light reaches them) so \`col *= 0.5 + 0.5 * h\` darkens the low areas. The eye then reads the surface as truly deep. **Colour and bump should agree**, otherwise the surface looks like a printed photo. Higher spots may also get lighter or drier colour: \`mix(dark, light, h)\`.`,
+}` },
+  { t: 'Let the height colour the surface too', x: `The same height can drive the colour. \`mix(dark, light, h)\` makes low parts darker. And multiplying by \`0.5 + 0.5 * h\` darkens the low areas even more: crevices get less light in real life, so this makes the surface read as truly deep. **Colour and bump should agree**, otherwise it looks like a printed photo.`,
+    shape: true, try: 'Remove the "col = col * ..." line and compare.',
     code: `void main() {
   float h = fbm3(vPos * 6.0);
   gNormal = bumpFromHeight(h, 0.08);
   gHasN = 1.0;
   vec3 col = mix(vec3(0.2, 0.17, 0.15), vec3(0.65, 0.58, 0.5), h);
-  col *= 0.5 + 0.5 * h;
+  col = col * (0.5 + 0.5 * h);
   gl_FragColor = finish(col, 1.0);
-}`, shape: true },
-  { t: 'A designed height: bricks', x: `Heights don't have to be noise. Take the brick layout from the patterns lesson. The distance to the nearest brick edge (\`edge\`) is the height: 0 in the mortar, rising to flat brick over a short distance. [[smoothstep]] makes the brick edge rounded, and a little [[fbm]] adds grain on top. **Design the height as a picture first, then plug it in.** The same height also colours the mortar.`,
+}` },
+  { t: 'A designed height: bricks', x: `The height can be any pattern you can make. Take the brick pattern from the patterns lesson: the border distance \`edge\` is 0 in the mortar and rises to flat brick, \`smoothstep\` makes the brick edge rounded: that is the height. A little \`fbm\` adds grain. **Design the height as a picture first, then plug it into \`bumpFromHeight\`.** The same \`brick\` value also colours the mortar.`,
+    shape: true, try: 'Change 0.6 (the brick height) to 1.5 for deeper mortar.',
     code: `void main() {
   vec2 g = vec2(vUv.x * 8.0, vUv.y * 16.0);
-  g.x += 0.5 * mod(floor(g.y), 2.0);
+  g.x = g.x + 0.5 * mod(floor(g.y), 2.0);
   vec2 cell = floor(g);
   vec2 f = fract(g);
   float edge = min(min(f.x, 1.0 - f.x), min(f.y, 1.0 - f.y));
@@ -2647,148 +3061,173 @@ void main() {
   vec3 clay = mix(vec3(0.6, 0.22, 0.14), vec3(0.8, 0.4, 0.25), hash21(cell));
   vec3 col = mix(vec3(0.55), clay, brick) * (0.75 + 0.5 * grain);
   gl_FragColor = finish(col, 1.0);
-}`, shape: true },
-  { t: 'Layer big and small detail', x: `Natural surfaces have bumps at several sizes: broad lumps and fine grit. Add heights at different scales with different weights: big feature strongly, small feature weakly. Scales that differ by about 4× look natural. Subtracting a feature (here pits from [[voronoi]]) digs holes. Try changing each multiplier to see which layer does what.`,
+}` },
+  { t: 'Layer big and small detail', x: `Natural surfaces have bumps at several sizes. Add heights at different scales with different weights: a big feature strongly, a fine one weakly. Scales about 4 to 8 times apart look natural. Subtracting a feature digs it in: here the first part of \`voronoi\` (dark at each cell centre) is subtracted to make dents.`,
+    shape: true, try: 'Change each multiplier (0.7, 0.15, 0.3) to find which layer does what.',
     code: `void main() {
   float big = fbm3(vPos * 3.0);
   float fine = fbm3(vPos * 24.0);
-  float pits = 1.0 - smoothstep(0.0, 0.25, voronoi(vPos.xy * 5.0 + vPos.z * 3.0).x);
-  float h = big * 0.7 + fine * 0.15 - pits * 0.3;
+  float dents = 1.0 - smoothstep(0.0, 0.3, voronoi(vPos.xy * 5.0).x);
+  float h = big * 0.7 + fine * 0.15 - dents * 0.3;
   gNormal = bumpFromHeight(h * 2.0, 0.06);
   gHasN = 1.0;
   vec3 col = mix(vec3(0.22, 0.2, 0.19), vec3(0.58, 0.53, 0.47), big);
   gl_FragColor = finish(col * (0.6 + 0.6 * fine), 1.0);
-}`, shape: true },
+}` },
 ], true);
 
-// ====================================================================== 7
+// ====================================================================== 11
 lesson('reflect', 'Reflections and shiny materials', 'Intermediate',
-  'Reflect the view direction, look it up in a fake environment, mix with fresnel, blur for roughness and combine with bump maps.', [
-  { t: 'The reflected direction', x: `A mirror sends your line of sight off in a new direction. [[reflect]](I, n) mirrors the vector \`I\` around the normal \`n\`. \`-viewDir()\` points from the camera **towards** the surface, which is what \`reflect\` wants. The result \`r\` says "what direction would I be seeing if this were a mirror?" Shown as colour: it changes smoothly over the shape.`,
+  'Reflect the view direction, look it up in an environment function you write yourself, then mix with fresnel and bump.', [
+  { t: 'The reflected direction', x: `A mirror sends your line of sight off in a new direction. [[reflect]](I, n) mirrors the direction \`I\` around the normal \`n\`. \`-viewDir()\` points from the camera **towards** the surface, which is what \`reflect\` wants (hence the minus).
+
+The result \`r\` answers: "what direction would I be seeing if this surface were a mirror?" Shown as colour, it changes smoothly across the shape.`,
+    new: ['reflect'], shape: true, try: 'Orbit the camera: the colours slide as the view direction changes.',
     code: `void main() {
   vec3 r = reflect(-viewDir(), surfNormal());
   gl_FragColor = vec4(r * 0.5 + 0.5, 1.0);
-}`, shape: true },
-  { t: 'Look it up in an environment', x: `A real reflection needs a picture of the world around. We can't load images, but a **function that returns a colour for a direction** works just as well. Here: sky above (blue getting paler near the horizon), dark ground below, a sharp change at the horizon (where \`r.y\` is 0). Your own functions go **above** \`main\`.`,
+}` },
+  { t: 'Your own function', x: `Before the next step you need one more tool: **writing your own function**. It looks like \`main\`, but with a **return type** in front (here \`float\`), a **name**, parameters in brackets, and a \`return\` line that gives the answer back.
+
+\`double_it\` takes a float and returns twice its value. Functions go **above** \`main\`, and you call them by name, exactly like the built-in ones. They keep long code tidy and let you use the same logic in several places.`,
+    new: [N('return', 'float name(float x) { return x * 2.0; }', 'Define your own function: return type, name, parameters. \`return\` hands the answer back.')],
+    shape: false, try: 'Change the function to return x * x and see the gradient bend.',
+    code: `float double_it(float x) {
+  return x * 2.0;
+}
+void main() {
+  float g = double_it(vUv.x * 0.5);
+  gl_FragColor = vec4(vec3(g), 1.0);
+}` },
+  { t: 'A fake environment', x: `A real reflection needs a picture of the world around the object. We can write a **function that returns a colour for a direction**, which is just as good: **sky colour above, ground colour below**, with a switch at the horizon (where the up-down part \`r.y\` is 0).
+
+\`smoothstep(-0.1, 0.1, r.y)\` is 0 below the horizon, 1 above, and a soft blend at it; \`mix\` then picks the ground or the sky.`,
+    shape: true, try: 'Change the sky and ground colours.',
     code: `vec3 env(vec3 r) {
-  vec3 sky = mix(vec3(0.75, 0.82, 0.9), vec3(0.22, 0.42, 0.85), smoothstep(0.0, 1.0, r.y));
-  vec3 ground = mix(vec3(0.28, 0.24, 0.2), vec3(0.06, 0.05, 0.05), 1.0 - smoothstep(-1.0, 0.0, r.y));
-  return mix(ground, sky, smoothstep(-0.04, 0.04, r.y));
+  vec3 sky = vec3(0.3, 0.55, 0.95);
+  vec3 ground = vec3(0.25, 0.2, 0.15);
+  return mix(ground, sky, smoothstep(-0.1, 0.1, r.y));
 }
 void main() {
   vec3 r = reflect(-viewDir(), surfNormal());
   gl_FragColor = vec4(env(r), 1.0);
-}`, shape: true },
-  { t: 'Put the sun in the reflection', x: `A mirror also shows the sun, as a tiny very bright disk. It's the same highlight idea as before: how closely does \`r\` point at \`uLightDir\`? \`pow(dot(r, L), 200.0)\` is a tight spot; multiplying by 3 makes it brighter than white, which looks like a real light. Click \`env\` in the editor and use the line preview to inspect it.`,
+}` },
+  { t: 'Put the sun in the reflection', x: `A mirror also shows the sun as a tiny very bright disc. It's the same idea as the highlight: how closely does the reflected direction \`r\` point at \`uLightDir\`? \`pow(max(dot(...), 0.0), 200.0)\` is a tight spot, and multiplying by 3 makes it brighter than white, which looks like a real light.
+
+Click \`c += ...\` in the editor and look at the line preview.`,
+    shape: true, try: 'Change 200.0 to 20.0 for a bigger softer sun.',
     code: `vec3 env(vec3 r) {
-  vec3 sky = mix(vec3(0.75, 0.82, 0.9), vec3(0.22, 0.42, 0.85), smoothstep(0.0, 1.0, r.y));
-  vec3 ground = mix(vec3(0.28, 0.24, 0.2), vec3(0.06, 0.05, 0.05), 1.0 - smoothstep(-1.0, 0.0, r.y));
-  vec3 c = mix(ground, sky, smoothstep(-0.04, 0.04, r.y));
-  c += uLightCol * pow(max(dot(r, uLightDir), 0.0), 200.0) * 3.0;
+  vec3 sky = vec3(0.3, 0.55, 0.95);
+  vec3 ground = vec3(0.25, 0.2, 0.15);
+  vec3 c = mix(ground, sky, smoothstep(-0.1, 0.1, r.y));
+  c = c + uLightCol * pow(max(dot(r, uLightDir), 0.0), 200.0) * 3.0;
   return c;
 }
 void main() {
   vec3 r = reflect(-viewDir(), surfNormal());
   gl_FragColor = vec4(env(r), 1.0);
-}`, shape: true },
-  { t: 'Not everything is a mirror: fresnel', x: `Plastic, paint, water and glass show only a **weak** reflection when you look straight at them, and almost a full mirror at glancing angles. That's [[fresnel]]. Mix the surface's own colour with the reflection by the fresnel value, with a small floor so the reflection never vanishes completely: \`0.08 + 0.92 * f\`. Lit with the sun as before (here simply the diffuse term).`,
+}` },
+  { t: 'Not everything is a mirror: fresnel', x: `Plastic, paint and water show only a **weak** reflection when you look straight at them and almost a full mirror at glancing angles. That's \`fresnel\` again. Mix the surface's own colour with the reflection by the fresnel value, with a floor (\`0.08 + 0.92 * f\`) so the reflection never vanishes completely.`,
+    shape: true, try: 'Change the base colour. Change the floor 0.08 to 0.5 for a more mirror-like surface.',
     code: `vec3 env(vec3 r) {
-  vec3 sky = mix(vec3(0.75, 0.82, 0.9), vec3(0.22, 0.42, 0.85), smoothstep(0.0, 1.0, r.y));
-  vec3 ground = mix(vec3(0.28, 0.24, 0.2), vec3(0.06, 0.05, 0.05), 1.0 - smoothstep(-1.0, 0.0, r.y));
-  vec3 c = mix(ground, sky, smoothstep(-0.04, 0.04, r.y));
-  c += uLightCol * pow(max(dot(r, uLightDir), 0.0), 200.0) * 3.0;
+  vec3 sky = vec3(0.3, 0.55, 0.95);
+  vec3 ground = vec3(0.25, 0.2, 0.15);
+  vec3 c = mix(ground, sky, smoothstep(-0.1, 0.1, r.y));
+  c = c + uLightCol * pow(max(dot(r, uLightDir), 0.0), 200.0) * 3.0;
   return c;
 }
 void main() {
-  vec3 n = surfNormal(), v = viewDir();
+  vec3 n = surfNormal();
+  vec3 v = viewDir();
   vec3 r = reflect(-v, n);
   vec3 base = vec3(0.7, 0.08, 0.06) * (0.3 + 0.7 * max(dot(n, uLightDir), 0.0));
   float f = 0.08 + 0.92 * fresnel(n, v, 5.0);
   gl_FragColor = vec4(mix(base, env(r), f), 1.0);
-}`, shape: true },
-  { t: 'Roughness: a blurry reflection', x: `A rough surface scatters light, so its reflection is blurry. We can't blur cheaply, but we can **blend towards a duller version**: looking up the environment along the **normal** instead of the reflected direction gives a smooth average of the surroundings. \`mix(env(r), env(n), rough)\` goes from sharp mirror to matte. Also widen the sun spot by lowering its power as roughness rises (it's in \`env\` via a second parameter).`,
+}` },
+  { t: 'Roughness: a blurry reflection', x: `A rough surface scatters light, so its reflection is blurry. Cheap trick: **blend towards a duller version**: looking up the environment along the *normal* instead of the reflected direction gives a smooth average of the surroundings. \`mix(env(r), env(n), uRough)\` goes from sharp mirror (0) to matte (1). \`uRough\` is a slider (\`uniform\`, as in the bump lesson).`,
+    shape: true, try: 'Open the Uniforms tab and move uRough.',
     code: `uniform float uRough; // 0.3 [0, 1]
-vec3 env(vec3 r, float rough) {
-  vec3 sky = mix(vec3(0.75, 0.82, 0.9), vec3(0.22, 0.42, 0.85), smoothstep(0.0, 1.0, r.y));
-  vec3 ground = mix(vec3(0.28, 0.24, 0.2), vec3(0.06, 0.05, 0.05), 1.0 - smoothstep(-1.0, 0.0, r.y));
-  float soft = mix(0.04, 0.6, rough);
-  vec3 c = mix(ground, sky, smoothstep(-soft, soft, r.y));
-  c += uLightCol * pow(max(dot(r, uLightDir), 0.0), mix(300.0, 8.0, rough)) * mix(3.0, 0.6, rough);
+vec3 env(vec3 r) {
+  vec3 sky = vec3(0.3, 0.55, 0.95);
+  vec3 ground = vec3(0.25, 0.2, 0.15);
+  vec3 c = mix(ground, sky, smoothstep(-0.1, 0.1, r.y));
+  c = c + uLightCol * pow(max(dot(r, uLightDir), 0.0), 200.0) * 3.0;
   return c;
 }
 void main() {
-  vec3 n = surfNormal(), v = viewDir();
-  vec3 r = reflect(-v, n);
-  vec3 refl = mix(env(r, uRough), env(n, 1.0), uRough);
-  vec3 base = vec3(0.8, 0.65, 0.3);
-  float f = 0.65 + 0.35 * fresnel(n, v, 5.0);
-  gl_FragColor = vec4(mix(base * 0.3, base * refl, f), 1.0);
-}`, shape: true },
-  { t: 'Reflect a bumpy surface', x: `The reflection only needs a normal, and the bump map gives you a different normal! Compute \`n\` with [[bumpFromHeight]], then use **that** in \`reflect\` and in the fresnel. The reflection now ripples across the bumps like hammered metal or water. This is why bump maps matter most on shiny things: each bump bends the reflection.
+  vec3 n = surfNormal();
+  vec3 r = reflect(-viewDir(), n);
+  vec3 refl = mix(env(r), env(n), uRough);
+  vec3 tint = vec3(1.0, 0.9, 0.8);
+  gl_FragColor = vec4(refl * tint, 1.0);
+}` },
+  { t: 'Reflect a bumpy surface', x: `The reflection only needs a normal, and \`bumpFromHeight\` gives you a different normal! Compute \`n\` with it, then use **that** normal in \`reflect\`. The reflection now ripples across the bumps like hammered metal or water.
 
-Note we don't call \`finish\` here, so there's no extra lighting: the result is entirely the reflection (tinted gold).`,
+This is why bump maps matter most on shiny things: every bump bends the reflection. We don't call \`finish\` here, so there's no extra lighting: the result is the reflection alone, with a slight tint.`,
+    shape: true, try: 'Change 0.08 (strength) and 3.0 (bump size).',
     code: `vec3 env(vec3 r) {
-  vec3 sky = mix(vec3(0.75, 0.82, 0.9), vec3(0.22, 0.42, 0.85), smoothstep(0.0, 1.0, r.y));
-  vec3 ground = mix(vec3(0.28, 0.24, 0.2), vec3(0.06, 0.05, 0.05), 1.0 - smoothstep(-1.0, 0.0, r.y));
-  vec3 c = mix(ground, sky, smoothstep(-0.04, 0.04, r.y));
-  c += uLightCol * pow(max(dot(r, uLightDir), 0.0), 200.0) * 3.0;
+  vec3 sky = vec3(0.3, 0.55, 0.95);
+  vec3 ground = vec3(0.25, 0.2, 0.15);
+  vec3 c = mix(ground, sky, smoothstep(-0.1, 0.1, r.y));
+  c = c + uLightCol * pow(max(dot(r, uLightDir), 0.0), 200.0) * 3.0;
   return c;
 }
 void main() {
-  float h = fbm3(vPos * 5.0);
-  vec3 n = bumpFromHeight(h, 0.1);
-  vec3 v = viewDir();
-  vec3 r = reflect(-v, n);
-  float f = 0.6 + 0.4 * fresnel(n, v, 4.0);
-  vec3 gold = vec3(1.0, 0.75, 0.35);
-  gl_FragColor = vec4(env(r) * gold * f, 1.0);
-}`, shape: true },
+  float h = fbm3(vPos * 3.0);
+  vec3 n = bumpFromHeight(h, 0.08);
+  vec3 r = reflect(-viewDir(), n);
+  vec3 tint = vec3(0.9, 0.95, 1.0);
+  gl_FragColor = vec4(env(r) * tint, 1.0);
+}` },
 ], true);
 
-// ====================================================================== 8
+// ====================================================================== 12
 const GOAL_TABLE = [
-  ['A shape: circle, box, line, star…', ['length', 'sdCircle', 'sdBox', 'sdSegment', 'smoothstep'], 'Make a **distance** number (how far from the shape), then cut it into a mask with `smoothstep`. The "Shapes (2D distance)" docs category has the ready-made ones.'],
+  ['A shape: circle, box, line, star…', ['length', 'distance', 'sdCircle', 'sdBox', 'sdSegment', 'smoothstep'], 'Make a **distance** number (how far from the shape), then cut it into a mask with `smoothstep`. The "Shapes (2D distance)" docs category has ready-made ones.'],
   ['Repeating things: tiles, stripes, dots', ['fract', 'floor', 'mod', 'checker'], '`fract(p * count)` repeats space. `floor` tells you which tile you are in (for per-tile randomness).'],
-  ['Natural, uneven, organic', ['noise', 'fbm', 'fbm3', 'voronoi', 'perlin'], 'Use noise as a **height or mask**. fbm = clouds, rock, dirt. voronoi = cells, cracks, scales, stones.'],
+  ['Natural, uneven, organic', ['noise', 'fbm', 'fbm3', 'voronoi', 'perlin'], 'Use noise as a **height or a mask**. fbm = clouds, rock, dirt. voronoi = cells, cracks, scales, stones.'],
   ['Random variation', ['hash11', 'hash21', 'hash22', 'hash31'], 'Pair with `floor(p)` so each tile gets its own steady random number.'],
-  ['Smooth transitions and edges', ['mix', 'smoothstep', 'step', 'clamp', 'saturate', 'remap'], 'Build a 0..1 number first, then shape it with smoothstep or pow, then use it as `t` in mix.'],
-  ['Picking colours', ['mix', 'palette', 'hsv2rgb', 'rgb2hsv', 'luma'], 'Few colours: mix. A rainbow or random hues: palette or hsv2rgb. Greyscale or tweak saturation: luma.'],
+  ['Smooth transitions and edges', ['mix', 'smoothstep', 'step', 'clamp', 'saturate', 'remap'], 'Build a 0 to 1 number first, shape it with smoothstep or pow, then use it as `t` in mix.'],
+  ['Picking colours', ['mix', 'palette', 'hsv2rgb', 'rgb2hsv', 'luma'], 'Few colours: mix. A rainbow or random hues: palette or hsv2rgb. Greyscale or saturation: luma.'],
   ['Motion and animation', ['uTime', 'sin', 'cos', 'fract', 'rot2'], 'Add `uTime` to a coordinate, to a noise input, or inside a `sin`. Rotate with `rot2(angle) * p`.'],
-  ['Rings, spirals, radial patterns', ['length', 'atan', 'rot2', 'sin'], 'Convert to polar: distance = `length(p)`, angle = `atan(p.y, p.x)`. Then a pattern in angle/distance becomes radial.'],
-  ['Distort or warp a pattern', ['noise', 'fbm', 'sin', 'rot2'], 'Add a noise or sin value to the **coordinate** before using it: `p += 0.1 * vec2(noise(p*4.0))`.'],
-  ['Lighting, shine, rim glow', ['surfNormal', 'viewDir', 'lambert', 'blinn', 'fresnel', 'finish'], 'Normal + light direction + view direction are the three vectors all lighting uses.'],
-  ['Surface detail: bumps, dents, scratches', ['bumpFromHeight', 'fbm3', 'voronoi', 'gNormal', 'gShine'], 'Design a **height** picture, then bumpFromHeight. See the bump lesson.'],
+  ['Rings, spirals, radial patterns', ['length', 'atan', 'rot2', 'sin'], 'Polar: distance = `length(p)`, angle = `atan(p.y, p.x)`. A pattern in angle/distance becomes radial.'],
+  ['Distort or warp a pattern', ['noise', 'fbm', 'sin', 'rot2'], 'Add a noise or sin value to the **coordinate** before using it: `p = p + 0.1 * noise(p * 4.0)`.'],
+  ['Lighting, shine, rim glow', ['surfNormal', 'viewDir', 'dot', 'pow', 'fresnel', 'finish'], 'Normal + light direction + view direction are the three vectors all lighting uses.'],
+  ['Surface detail: bumps, dents, scratches', ['bumpFromHeight', 'fbm3', 'voronoi', 'gNormal', 'gShine'], 'Design a **height** picture, then `bumpFromHeight`. See the bump lesson.'],
   ['Mirror, metal, glass, water', ['reflect', 'fresnel', 'surfNormal', 'viewDir', 'pow'], 'Reflect the view direction, look it up in an environment function, mix with fresnel. See the reflection lesson.'],
-  ['Transparency and glow', ['fresnel', 'smoothstep', 'exp'], 'Set the type to **transparent**, put the see-through amount in alpha. Glows are added light: `col += glowColour * exp(-d * k)`.'],
-  ['Something on the object\'s own position', ['vPos', 'vUv', 'vN', 'vW', 'cameraPosition'], '`vUv` stays on the surface (can show seams), `vPos` is a 3D position in the object (seamless with fbm3/noise3).'],
+  ['Transparency and glow', ['fresnel', 'smoothstep', 'exp'], 'Set the type to **transparent** and put the see-through amount in alpha. Glows are added light: `col = col + glowColour * exp(-d * k)`.'],
+  ['Something based on the object\'s own position', ['vPos', 'vUv', 'vN', 'vW', 'cameraPosition'], '`vUv` stays on the surface (can show seams), `vPos` is a 3D position in the object (seamless with fbm3).'],
 ];
 lesson('backwards', 'Working backwards from a picture in your head', 'Method',
-  'How to take an idea like "molten lava" apart into pieces, find where each piece lives in the Docs, and rebuild it step by step.', [
-  { t: 'Start with questions, not code', x: `When you picture something and don't know how to make it, don't look for **the** function. Almost nothing is one function. Look at the picture and ask, in this order:
+  'How to take an idea like "molten lava" apart into pieces, find where each piece lives in the Docs, and rebuild it layer by layer.', [
+  { t: 'Start with questions, not code', x: `When you picture something and don't know how to make it, don't look for **the** function. Almost nothing is one function. Look at the picture and ask, in order:
 
-**1. Shape.** What are the regions? (A circle? Cells? Blobs? Stripes?) → each region is a **mask**: a 0..1 number.
-**2. Pattern.** Does it repeat (fract/floor), is it random and organic (noise/fbm/voronoi), or is it a smooth gradient (a coordinate)?
+**1. Shape.** What are the regions? (A circle? Cells? Blobs? Stripes?) Each region is a **mask**: a 0 to 1 number.
+**2. Pattern.** Does it repeat (fract / floor), is it random and organic (noise / fbm / voronoi), or a smooth gradient (a coordinate)?
 **3. Colour.** How many colours, and what picks between them? (mask → mix, height → ramp, angle → palette.)
-**4. Surface.** Is it flat, bumpy, shiny, glowing, see-through? (bump, gShine, fresnel, emission, alpha.)
+**4. Surface.** Flat, bumpy, shiny, glowing, see-through? (bump, gShine, fresnel, extra light, alpha.)
 **5. Motion.** What changes over time? (add \`uTime\` to one of the inputs above.)
 
-Write the answers down as a list of layers. Each layer can then be built and checked alone, and the line preview lets you inspect each one.`, },
-  { t: 'Where to look for what', x: `Click any name below to jump to its documentation and example in the Docs tab. Each row is a thing you might want, the pieces that produce it, and the usual way to use them.`, table: GOAL_TABLE },
+Write the answers down as a list of layers. Each layer can be built and checked alone, and the line preview lets you inspect each one.` },
+  { t: 'Where to look for what', x: `Click any name to jump to its documentation and example in the Docs tab. Each row is a thing you might want, the pieces that produce it, and the usual way to use them.`, table: GOAL_TABLE },
   { t: 'Worked example: "a molten lava ball". Layer 1, the pattern', x: `Take the idea apart.
-**Shape:** dark crust plates with glowing cracks. **Pattern:** organic and random → noise. **Colour:** black-brown crust, orange-yellow lava. **Surface:** crust is rough and lit; lava glows by itself. **Motion:** the lava slowly moves.
+**Shape:** dark crust plates with glowing cracks. **Pattern:** organic and random, so noise. **Colour:** black-brown crust, orange-yellow lava. **Surface:** crust is rough and lit; lava glows by itself. **Motion:** the lava slowly moves.
 
-Build the pattern first, alone, in black and white. [[fbm3]] on the 3D position wraps cleanly around the ball, and adding to the y input makes it drift slowly.`,
+Build the pattern first, alone, in black and white. \`fbm3\` on the 3D position wraps cleanly around the ball, and adding to the y input makes it drift slowly.`,
+    shape: true, try: 'Change 2.5 for bigger or smaller plates.',
     code: `void main() {
   float n = fbm3(vPos * 2.5 + vec3(0.0, uTime * 0.1, 0.0));
   gl_FragColor = vec4(vec3(n), 1.0);
-}`, shape: true },
-  { t: 'Layer 2, turn the pattern into a mask', x: `We need two regions, crust and lava, so cut the noise with [[smoothstep]]: above 0.5 is crust (1), below is lava (0), with a narrow transition. Moving the 0.5 changes how much of the ball is crust: that is your main design control. A mask is only a number, so we show it as grey.`,
+}` },
+  { t: 'Layer 2: turn the pattern into a mask', x: `We need two regions, crust and lava, so cut the noise with \`smoothstep\`: above about 0.56 is crust (1), below 0.46 is lava (0), a narrow transition between. Moving these two numbers changes how much of the ball is crust: that's your main design control.`,
+    shape: true, try: 'Raise both numbers to get more lava.',
     code: `void main() {
   float n = fbm3(vPos * 2.5 + vec3(0.0, uTime * 0.1, 0.0));
   float crust = smoothstep(0.46, 0.56, n);
   gl_FragColor = vec4(vec3(crust), 1.0);
-}`, shape: true },
-  { t: 'Layer 3, colour each region', x: `Now give each region its own colour and combine with [[mix]] and the mask. The lava gets a gradient too: hotter (yellower) where the noise is lowest, i.e. in the middle of the cracks. This is the "which colour comes from which number" step: the same noise \`n\` drives both the mask and the lava colour.`,
+}` },
+  { t: 'Layer 3: colour each region', x: `Give each region its own colour and combine with \`mix\` and the mask. The lava gets a gradient too (hotter yellow where the noise is lowest, the middle of the cracks). The same \`n\` drives both the mask and the lava colour. This is the "which colour comes from which number" step.`,
+    shape: true, try: 'Change the lava colours to make green slime.',
     code: `void main() {
   float n = fbm3(vPos * 2.5 + vec3(0.0, uTime * 0.1, 0.0));
   float crust = smoothstep(0.46, 0.56, n);
@@ -2796,8 +3235,11 @@ Build the pattern first, alone, in black and white. [[fbm3]] on the 3D position 
   vec3 lavaCol = mix(vec3(1.0, 0.85, 0.3), vec3(0.9, 0.15, 0.0), smoothstep(0.2, 0.5, n));
   vec3 col = mix(lavaCol, crustCol, crust);
   gl_FragColor = vec4(col, 1.0);
-}`, shape: true },
-  { t: 'Layer 4, light only the crust', x: `Lava gives off its own light, so it shouldn't be darkened by shading. Rock should. So we compute the lit rock colour with [[finish]] (take its \`.rgb\`), and show the lava unlit and a bit over-bright (values above 1 look intense): \`mix(lava, litRock, crust)\`. **Different parts of one object can follow different rules**, as long as the mask chooses.`,
+}` },
+  { t: 'Layer 4: light only the crust', x: `Lava gives off its own light, so it shouldn't be darkened by shading; rock should. So we run only the crust colour through \`finish\` and take the colour from the result: \`finish(...)\` returns a vec4, and **\`.rgb\`** picks its first three parts (red, green, blue). The lava is shown unlit and over-bright (\`* 1.6\`; values above 1 look intense), and the mask chooses.
+
+**Different parts of one object can follow different rules**, as long as a mask chooses.`,
+    shape: true, try: 'Change 1.6 to 1.0 and 3.0.',
     code: `void main() {
   float n = fbm3(vPos * 2.5 + vec3(0.0, uTime * 0.1, 0.0));
   float crust = smoothstep(0.46, 0.56, n);
@@ -2806,8 +3248,9 @@ Build the pattern first, alone, in black and white. [[fbm3]] on the 3D position 
   vec3 lit = finish(crustCol, 1.0).rgb;
   vec3 col = mix(lavaCol * 1.6, lit, crust);
   gl_FragColor = vec4(col, 1.0);
-}`, shape: true },
-  { t: 'Layer 5, the surface: bump the crust', x: `The crust should look raised above the lava. Reuse the same noise as the height: crust high, lava low, plus some fine grit. \`gNormal\` must be set **before** calling \`finish\`. The edge of each plate is now bevelled by the mask's smooth transition. See how a bump layer uses the numbers you already had: no new idea, just a new use.`,
+}` },
+  { t: 'Layer 5: bump the crust', x: `The crust should look raised above the lava. Reuse the same mask as the **height**: crust high, lava low, plus a little fine grit. \`gNormal\` and \`gHasN\` are set **before** \`finish\` is called. No new idea: it's the bump lesson with numbers you already had.`,
+    shape: true, try: 'Raise 0.06 for stronger bumps.',
     code: `void main() {
   float n = fbm3(vPos * 2.5 + vec3(0.0, uTime * 0.1, 0.0));
   float crust = smoothstep(0.46, 0.56, n);
@@ -2819,10 +3262,11 @@ Build the pattern first, alone, in black and white. [[fbm3]] on the 3D position 
   vec3 lit = finish(crustCol, 1.0).rgb;
   vec3 col = mix(lavaCol * 1.6, lit, crust);
   gl_FragColor = vec4(col, 1.0);
-}`, shape: true },
-  { t: 'Layer 6, atmosphere: a hot rim', x: `Finishing touches usually come from the lighting group. A [[fresnel]] mask adds an orange glow at the edge of the ball, as if heat haze surrounded it. We **add** (+=) because it is emitted light. Now compare the first picture with this: six small, separate decisions, each one answering one question from step one.
+}` },
+  { t: 'Layer 6: a hot rim', x: `Finishing touches usually come from the lighting group. A \`fresnel\` mask adds an orange glow at the edge of the ball, like heat haze. We *add* because it's emitted light. Compare the first picture with this one: six small, separate decisions, each answering one question from step one.
 
-When you build your own: finish one layer, look at it, then add the next. If something looks wrong, click the line that makes it and use the line preview to see which layer is the problem.`,
+When you build your own: finish one layer, look at it, add the next. If something looks wrong, click the line that makes it and use the line preview to see which layer is the problem.`,
+    shape: true, try: 'Change 0.6 (the rim strength).',
     code: `void main() {
   float n = fbm3(vPos * 2.5 + vec3(0.0, uTime * 0.1, 0.0));
   float crust = smoothstep(0.46, 0.56, n);
@@ -2833,206 +3277,10 @@ When you build your own: finish one layer, look at it, then add the next. If som
   vec3 lavaCol = mix(vec3(1.0, 0.85, 0.3), vec3(0.9, 0.15, 0.0), smoothstep(0.2, 0.5, n));
   vec3 lit = finish(crustCol, 1.0).rgb;
   vec3 col = mix(lavaCol * 1.6, lit, crust);
-  col += vec3(1.0, 0.35, 0.05) * fresnel(surfNormal(), viewDir(), 3.0) * 0.6;
+  col = col + vec3(1.0, 0.35, 0.05) * fresnel(surfNormal(), viewDir(), 3.0) * 0.6;
   gl_FragColor = vec4(col, 1.0);
-}`, shape: true },
+}` },
 ], true);
-
-// ====================================================================== the two foundation lessons (moved to the front below)
-lesson('basics', 'The very first shader: main() and colour', 'Absolute beginner',
-  'One line of code that paints everything red, then what `void main()`, `gl_FragColor`, `vec4` and the four colour numbers really mean.', [
-  { t: 'One line, one colour', x: `This is a complete shader. It has one job: **decide the colour of a pixel**. The line sets \`gl_FragColor\`, the shader's output, to \`vec4(1.0, 0.0, 0.0, 1.0)\`: four numbers, which are red, green, blue and alpha.
-
-Red is 1.0 (full), green and blue are 0.0 (none): so everything is red. Click the line in the editor and change a number. The picture on this page and the big preview change right away.
-
-The \`void main() { ... }\` around the line is just the wrapper every shader needs. The next step explains it.`,
-    code: `void main() {
-  gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
-}` },
-  { t: 'What void main() { } means', x: `\`main\` is the **name** of the function the graphics card runs. You don't call it; the card calls it for you, once for every pixel.
-
-**void** means "this function gives nothing back". Instead of returning a value, it **writes** its answer into the special variable \`gl_FragColor\` (the "fragment colour": a fragment is a pixel-to-be). Whatever is in \`gl_FragColor\` when \`main\` ends is the pixel's colour.
-
-**{ }** (curly braces) hold the function's body: everything between them belongs to \`main\`. Every line that does something ends with a **semicolon** \`;\`. A missing semicolon is the most common first error: the red message under the editor tells you the line.
-
-Text after \`//\` is a **comment**: the computer ignores it, it's for you.`,
-    code: `void main() {
-  // everything in here runs once per pixel
-  gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);   // red
-}` },
-  { t: 'The four numbers: r, g, b, a', x: `The colour is described by **four numbers**, always in this order:
-
-**r** red amount, **g** green amount, **b** blue amount, **a** alpha (how opaque; 1.0 is solid).
-
-Each goes from **0.0** (none) to **1.0** (full). Screens make every colour by mixing red, green and blue light, so mixing is *adding light*: red + green = **yellow**, all three = **white**, none = **black**. Alpha only matters when the shader type is set to *transparent* (top bar); otherwise keep it 1.0.
-
-Try: \`(0,1,0,1)\` green, \`(1,1,0,1)\` yellow, \`(0.5,0.5,0.5,1)\` mid grey. Here is yellow.`,
-    code: `void main() {
-  gl_FragColor = vec4(1.0, 1.0, 0.0, 1.0);
-}` },
-  { t: 'Give each number a name', x: `\`vec4(1.0, 1.0, 0.0, 1.0)\` is hard to read: which number is which? Let's **name the four numbers** first. \`float\` is the type for **a single decimal number**; we declare four, then pass them to \`vec4(...)\` in the same order.
-
-The result is identical to the one-liner. Nothing new happens on screen: this is only a clearer way to write the same thing, and it is the pattern all shaders use: **compute numbers, gather them into a colour at the end**. The green lines are the new ones.`,
-    code: `void main() {
-  float r = 1.0;
-  float g = 1.0;
-  float b = 0.0;
-  float a = 1.0;
-  gl_FragColor = vec4(r, g, b, a);
-}` },
-  { t: 'Why 1.0 and not 1?', x: `Shaders are strict about types. \`1\` is an **int** (a whole number) and \`1.0\` is a **float** (a decimal number); GLSL does **not** convert between them for you. Writing \`vec4(1, 0, 0, 1)\` with ints can give an error on some graphics cards, so always put the **.0**.
-
-Also: the numbers don't have to be fixed. Here \`r\` is half-way and \`b\` is made from \`r\`: **a value can be calculated from other values**, which is the entire game from now on. Change \`r\` and watch \`b\` follow.`,
-    code: `void main() {
-  float r = 0.5;
-  float g = 0.2;
-  float b = 1.0 - r;
-  float a = 1.0;
-  gl_FragColor = vec4(r, g, b, a);
-}` },
-  { t: 'What is a vector?', x: `\`vec4\` is a **vector**: a small bundle of numbers stored together under one name. There are three sizes you'll use:
-
-**vec2**, two numbers (x, y), usually a **position**
-**vec3**, three numbers, usually a **colour** (r, g, b) or a **direction** (x, y, z)
-**vec4**, four numbers, a colour with alpha
-
-You can pick the parts out by name: for colours \`.r .g .b .a\`, for positions \`.x .y .z .w\` (the same four slots, two sets of names). So \`c.r\` is the first number. And you can write \`c.g = 0.0\` to change one part. Below, build one colour as a \`vec4\` and set a part.`,
-    code: `void main() {
-  vec4 c = vec4(1.0, 0.5, 0.0, 1.0);
-  c.g = 0.9;
-  gl_FragColor = c;
-}` },
-  { t: 'Shorter ways to build a vector', x: `Writing every number gets long. GLSL lets you **mix pieces** when making a vector: the pieces just have to add up to the right number of values.
-
-\`vec3(0.2, 0.6, 1.0)\`, three numbers, an RGB colour.
-\`vec4(col, 1.0)\`, a vec3 plus one float = a vec4: "this colour, fully opaque".
-\`vec3(0.5)\`, one number repeated: \`vec3(0.5, 0.5, 0.5)\`, a grey.
-
-Almost every shader does the first two: **make an RGB colour, then add the alpha at the end.**`,
-    code: `void main() {
-  vec3 col = vec3(0.2, 0.6, 1.0);
-  gl_FragColor = vec4(col, 1.0);
-}` },
-  { t: 'Maths on vectors', x: `The big advantage of vectors: arithmetic works on **all parts at once**. \`col * 0.5\` halves every part (darker), \`col + 0.2\` adds 0.2 to every part (lighter), and \`a * b\` multiplies matching parts (red with red, green with green...). Multiplying two colours is how you **tint**: a white thing times orange becomes orange.
-
-Here a sky blue is multiplied by an orange tint (red stays 0.2, green drops to 0.42, blue drops to 0.3), then 0.1 is added to all three. Change the tint and see.`,
-    code: `void main() {
-  vec3 col = vec3(0.2, 0.6, 1.0);
-  vec3 tint = vec3(1.0, 0.7, 0.3);
-  col = col * tint;
-  col = col + 0.1;
-  gl_FragColor = vec4(col, 1.0);
-}` },
-  { t: 'Limits: below 0 and above 1', x: `The screen can only show 0..1. A value of 2.0 shows exactly like 1.0 (it is **clamped**), and -1.0 shows like 0.0. So these two colours look the same, even though the numbers differ. The extra brightness is only visible **inside** the shader, when you later multiply or blend (which is how glows are built).
-
-You now know every piece in a one-line shader. Next: how the card actually **runs** it, and what that means. The "How shaders run" lesson is next.`,
-    code: `void main() {
-  vec3 a = vec3(1.0, 0.5, 0.2);
-  vec3 b = vec3(3.0, 0.5, 0.2);
-  gl_FragColor = vec4(mix(a, b, step(0.5, vUv.x)), 1.0);
-}` },
-]);
-
-lesson('pixels', 'How shaders run: one pixel at a time', 'Absolute beginner',
-  'Your code runs separately for every pixel, and a pixel cannot see its neighbours. Why this is true, what follows from it, and the questions to ask when designing an effect.', [
-  { t: 'The same code, everywhere at once', x: `A shader is **one small program run again and again, once for each pixel** of the object, all at the same moment (a graphics card has thousands of tiny processors). A 500 × 500 picture means 250,000 separate runs of \`main()\`.
-
-Every run is identical code. If they all received the same inputs they'd all give the same colour. What makes the picture interesting is that **each pixel is told where it is**: the input [[vUv]] is different for each one. Pixel A gets \`vUv = (0.1, 0.2)\`, pixel B gets \`(0.8, 0.5)\`. The whole picture below comes from one formula, answered 250,000 times with different positions.`,
-    code: `void main() {
-  gl_FragColor = vec4(vUv.x, vUv.y, 0.5, 1.0);
-}` },
-  { t: 'The rule: pixels cannot talk to each other', x: `Here is the most important idea in shader writing:
-
-**Each pixel is calculated alone. It can't read what its neighbour got, and it can't see what another pixel is doing.**
-
-They run at the same time, so there isn't a "left pixel first, then me" order, and nothing to look at. If you write "my colour = my left neighbour's colour + a bit" there is nowhere to read that from.
-
-So everything a pixel knows comes from: **its own position** (\`vUv\`, \`vPos\`...), **numbers that are the same for everybody** (\`uTime\`, uniforms), and the **maths in your code**. In this picture each pixel works out its colour from its own \`vUv.x\` only. It "looks" like neighbours are related, but each is just evaluating the same formula.`,
-    code: `void main() {
-  float v = 0.5 + 0.5 * sin(vUv.x * 30.0);
-  gl_FragColor = vec4(vec3(v), 1.0);
-}` },
-  { t: 'Proof: pixels that truly ignore each other', x: `Here's what independence looks like. [[hash21]] gives a random number from a position. Giving it the pixel position gives **each pixel its own unrelated random value**: static, like an untuned TV. Two neighbouring pixels have nothing in common, because neither knows the other exists.
-
-Compare with the previous step, where nearby pixels look alike. That's **not** because they communicate: it's because \`sin\` is a *smooth* function, so a tiny change in position gives a tiny change in answer. **Smooth input and smooth formula = smooth picture. Random formula = static.**`,
-    code: `void main() {
-  float r = hash21(floor(vUv * 64.0));
-  gl_FragColor = vec4(vec3(r), 1.0);
-}` },
-  { t: 'No memory between pixels or frames', x: `Variables you create inside \`main\` are **born when that pixel's run starts and die when it ends**. Nothing is saved for the next pixel and nothing is kept from the previous frame. 60 times a second the card draws the whole picture again from scratch.
-
-So how can a shader animate? Through the **inputs** that change: \`uTime\` increases every frame, and every pixel receives the same current value. The picture moves because the *formula's input* moved, not because anything was remembered.
-
-Hover the picture: the same pixel position gives a different colour at a different \`uTime\`.`,
-    code: `void main() {
-  float v = 0.5 + 0.5 * sin(vUv.x * 30.0 - uTime * 4.0);
-  gl_FragColor = vec4(vec3(v), 1.0);
-}` },
-  { t: 'Think from the pixel\'s point of view', x: `Because of all this, shader writing is a particular way of thinking. You don't "draw a line"; each pixel asks itself **"am I on the line?"**. You don't "draw a circle at the middle"; each pixel asks **"how far am I from the middle?"** and answers with a colour.
-
-So the recipe for any effect: **write down the question a single pixel would ask about its own position, answer it with a number, turn the number into a colour.**
-
-Here every pixel asks: "how far am I from the line between these two points?" ([[sdSegment]] answers that), then [[smoothstep]] turns the distance into a thin bright line. Nobody drew a line: the pixels close to it just chose to be white.`,
-    code: `void main() {
-  vec2 p = (vUv - 0.5) * 2.0;
-  float d = sdSegment(p, vec2(-0.6, -0.5), vec2(0.7, 0.4));
-  float line = 1.0 - smoothstep(0.02, 0.05, d);
-  gl_FragColor = vec4(vec3(line), 1.0);
-}` },
-  { t: 'Looking at a neighbour: ask the formula again', x: `You can't read a neighbour's **result**, but you *can* calculate what the neighbour **would** get, because the formula is yours. Put the logic in a function, then call it with a slightly different position: that is "asking about the pixel next to me" by doing the sum again.
-
-Here \`shape(p)\` is 1 inside a circle. To find the **edge** we compare my answer with the answer at a point a bit to the right and a bit above: where they differ, I'm on the border. This trick (sampling the same formula at nearby points) is how outlines, blurs and soft shadows are made.`,
-    code: `float shape(vec2 p) {
-  return 1.0 - step(0.6, length(p));
-}
-void main() {
-  vec2 p = (vUv - 0.5) * 2.0;
-  float me = shape(p);
-  float right = shape(p + vec2(0.03, 0.0));
-  float up = shape(p + vec2(0.0, 0.03));
-  float edge = abs(me - right) + abs(me - up);
-  gl_FragColor = vec4(vec3(me * 0.25 + edge), 1.0);
-}` },
-  { t: 'Same for everyone vs different per pixel', x: `Now we can name the two kinds of inputs, a distinction used everywhere in the docs:
-
-**Uniforms** are the **same for every pixel** in a frame: \`uTime\`, \`uSeed\`, \`uLightDir\`, and the sliders in the Uniforms tab. Set once, read by everyone.
-
-**Varyings** (or "per-pixel inputs") **differ from pixel to pixel**: \`vUv\`, \`vPos\`, \`vN\`. The graphics card fills in smoothly-changing values between the corners of the shape for each pixel.
-
-In the picture below the bottom half is built only from a uniform (every pixel agrees: a flat colour that changes with time), the top half uses \`vUv\` (every pixel differs: a gradient). Hover to see the bottom half pulse as one.`,
-    code: `void main() {
-  vec3 same = vec3(0.5 + 0.5 * sin(uTime * 2.0), 0.4, 0.8);
-  vec3 differs = vec3(vUv.x, 0.4, 0.8);
-  vec3 col = mix(same, differs, step(0.5, vUv.y));
-  gl_FragColor = vec4(col, 1.0);
-}` },
-  { t: 'On a 3D shape it is the same', x: `Nothing changes in 3D. The pixels of the sphere you see in the big preview are each one run of the shader, and the per-pixel inputs now include the surface direction [[surfNormal]] and the position \`vPos\`. The picture is still **one question per pixel**: "which way does *my* bit of surface face?"
-
-Here each pixel colours itself by how much its own surface points upwards. The pixel on the top of the sphere and the pixel at the side never exchange information. They each look at the arrow they were handed.`,
-    code: `void main() {
-  float up = surfNormal().y * 0.5 + 0.5;
-  gl_FragColor = vec4(vec3(up), 1.0);
-}`, shape: true },
-  { t: 'The one exception: derivatives', x: `There **is** one controlled way to peek at neighbours. The card runs pixels in small groups (2 × 2) and lets you ask how much a value **changes** between a pixel and its neighbour: [[dFdx]] (change to the right) and [[dFdy]] (change upwards), and [[fwidth]] (the total size of the change).
-
-It does not give you the neighbour's colour; it gives you the **difference of one value**. That's enough for things like **crisp anti-aliased lines** and for **bump mapping**: [[bumpFromHeight]] measures how steeply a height changes between pixels to find the slope. Here brightness shows how fast \`sin\` changes per pixel: bright where it is steep, dark at the tops and bottoms of the waves.`,
-    code: `void main() {
-  float wave = sin(vUv.x * 40.0);
-  float change = fwidth(wave) * 12.0;
-  gl_FragColor = vec4(vec3(change), 1.0);
-}` },
-  { t: 'Summary of the rules', x: `**1.** \`main()\` runs once per pixel, all at the same time.
-**2.** A pixel's colour is a function of its **own inputs only**: position, uniforms, constants.
-**3.** Pixels can't read each other's results or share variables. Variables vanish after each run, and nothing carries over between frames except the changing \`uTime\`.
-**4.** To involve "nearby" areas, evaluate your own formula at a **nearby position** (edges, blurs) or use **derivatives** (change per pixel).
-**5.** Design effects by asking: **"What would one pixel need to know about itself to pick its colour?"**
-
-With this vocabulary the other lessons (patterns, lighting, bump) will read easily. For example a bump map doesn't move anything: each pixel just receives a *slightly different normal*.`,
-  },
-]);
-
-// put the two foundation lessons first
-(() => { for (const id of ['pixels', 'basics']) { const i = LESSONS.findIndex(l => l.id === id); LESSONS.unshift(LESSONS.splice(i, 1)[0]); } })();
 
 /* ===== editor.js : a small self-contained code editor engine for GLSL =====
    textarea (input, caret, selection) + a highlighted <pre> underneath + line-number gutter.
@@ -3498,10 +3746,15 @@ const loadStore = () => { try { return JSON.parse(localStorage.getItem(LS) || 'n
 const saveStore = o => { memStore = o; try { localStorage.setItem(LS, JSON.stringify(o)); } catch (e) { /* storage may be blocked: keep working in memory */ } };
 
 const LIB_BY = {}; for (const b of LIB) LIB_BY[b.key] = b;
+const DEFAULT_SCENE = { v: 2, shape: 'rect', spin: true, anim: true, speed: 1, tod: 'day', az: 40, el: 50, bg: 0, dist: 3.4, yaw: 0.55, pitch: 0.3, seed: 0.37 };
+const DEFAULT_LINE = { on: true, mode: 'flat', viz: 0, lo: 0, hi: 1 };
+function hstr(t) { let x = 5381; for (let i = 0; i < t.length; i++) x = ((x << 5) + x + t.charCodeAt(i)) | 0; return (x >>> 0).toString(36); }
+const stepKey = (L, i) => 'l:' + L.id + ':' + i + ':' + hstr(L.steps[i].code);
+const exampleKey = d => 'x:' + d.n + ':' + hstr(d.ex);
 const S = {
   lib: [], cur: null, deleted: [], prog: null, lineProg: null, lineCode: null, errors: [], uv: {}, uSig: '', caret: { off: 0, line: 1, col: 1 }, time: 0, spin: 0,
-  scene: { shape: 'sphere', spin: true, anim: true, speed: 1, tod: 'day', az: 40, el: 50, bg: 0, dist: 3.4, yaw: 0.55, pitch: 0.3, seed: 0.37 },
-  line: { on: true, mode: 'shape', viz: 0, lo: 0, hi: 1 },
+  scene: Object.assign({}, DEFAULT_SCENE),
+  line: Object.assign({}, DEFAULT_LINE),
   ui: { tab: 'shaders', collapsed: {}, rightW: 470, pvH: 280, lpH: 190 },
 };
 let dirty = true, saveT = 0, compT = 0, lineT = 0, ed = null, pvMain = null, pvLine = null, thumbs = null;
@@ -3513,10 +3766,16 @@ function initLib() {
   const st = loadStore() || {}, del = new Set(st.deleted || []), ov = {}; (st.over || []).forEach(o => { ov[o.key] = o; });
   S.lib = LIB.filter(b => !del.has(b.key)).map(b => { const e = mkEntry(b), o = ov[b.key]; if (o) { if (o.name != null) e.name = o.name; if (o.code != null) e.code = o.code; if (o.type) e.type = o.type; e.uvals = o.uvals || {}; } return e; });
   for (const c of st.customs || []) S.lib.push({ key: c.key, name: c.name, cat: c.cat || 'My shaders', type: c.type || 'opaque', code: c.code, builtin: false, uvals: c.uvals || {} });
-  if (st.scene) Object.assign(S.scene, st.scene); if (st.line) Object.assign(S.line, st.line); if (st.ui) Object.assign(S.ui, st.ui);
+  if (st.scene) { Object.assign(S.scene, st.scene); if (st.scene.v !== 2) { S.scene.v = 2; S.scene.shape = 'rect'; S.scene.anim = true; S.line.mode = 'flat'; } if (!SHAPES[S.scene.shape]) S.scene.shape = 'rect'; }
+  if (st.line && st.scene && st.scene.v === 2) Object.assign(S.line, st.line); if (st.ui) Object.assign(S.ui, st.ui);
+  { // lesson / docs-example copies made by older versions point at old code: drop them (the key now contains a hash of the code)
+    const valid = new Set(); for (const L of LESSONS) L.steps.forEach((x, i) => { if (x.code) valid.add(stepKey(L, i)); }); for (const d of DOCS) if (d.ex) valid.add(exampleKey(d));
+    S.lib = S.lib.filter(e => !/^[lx]:/.test(e.key) || valid.has(e.key));
+  }
   S.deleted = [...del]; S.cur = S.lib.find(e => e.key === st.cur) || S.lib[0];
 }
 function persist() {
+  saveScroll();
   const over = [], customs = [];
   for (const e of S.lib) {
     const o = { key: e.key, name: e.name, code: e.code, type: e.type, uvals: e.uvals, cat: e.cat };
@@ -3736,10 +3995,22 @@ function importText(name, text) {
 }
 
 // ------------------------------------------------------------------ tabs: shapes bar, scene, help
+function resetSettings(opt) {
+  opt = opt || {};
+  S.scene = Object.assign({}, DEFAULT_SCENE); S.line = Object.assign({}, DEFAULT_LINE); S.time = 0; S.spin = 0;
+  if (S.cur && !opt.keepUniforms) { S.cur.uvals = {}; S.uSig = ''; rebuildUniforms(true); }
+  buildShapes(); buildScene(); buildLineHead(); updateLine(true); markDirty(); saveSoon(); if (!opt.quiet) toast('Preview settings reset to the defaults');
+}
+function applyStepView(L, st) {   // opening a lesson step: use a view that suits it (flat picture: round, undistorted square; 3D step: a shape)
+  const want3D = st.shape !== undefined ? st.shape : L.shape, cur = SHAPES[S.scene.shape];   // only choose a suitable view; other settings stay as they are
+  if (want3D) { if (cur.flat) S.scene.shape = 'sphere'; } else S.scene.shape = 'square';
+  buildShapes(); buildScene(); markDirty();
+}
 function buildShapes() {
   const bar = $('#shapes'); bar.textContent = '';
   for (const [k, v] of Object.entries(SHAPES)) { const b = h('button', S.scene.shape === k ? 'on' : '', v.label); b.onclick = () => { S.scene.shape = k; buildShapes(); markDirty(); saveSoon(); }; bar.append(b); }
-  bar.append(h('span', 'grow'));
+  const grow = h('span', 'grow'); bar.append(grow);
+  const rd = h('button', 'tread', ''); rd.id = 'timeRead'; rd.title = 'The value of uTime right now. Click to restart it at 0.'; rd.onclick = () => { S.time = 0; markDirty(); }; bar.append(rd);
   const sp = h('button', S.scene.spin ? 'on' : '', 'Spin'); sp.title = 'Rotate the shape'; sp.onclick = () => { S.scene.spin = !S.scene.spin; buildShapes(); markDirty(); saveSoon(); };
   const tm = h('button', S.scene.anim ? 'on' : '', 'Time'); tm.title = 'Let uTime run (off = freeze the animation)'; tm.onclick = () => { S.scene.anim = !S.scene.anim; buildShapes(); markDirty(); saveSoon(); };
   const rs = h('button', '', '⟲'); rs.title = 'Restart uTime at 0 and reset the camera'; rs.onclick = () => { S.time = 0; Object.assign(S.scene, { yaw: 0.55, pitch: 0.3, dist: 3.4 }); markDirty(); };
@@ -3754,6 +4025,7 @@ function select(parent, label, key, opts, numeric) {
 }
 function buildScene() {
   const p = $('#tab-scene'); p.textContent = '';
+  { const rb = h('button', '', '⟲ Reset all preview settings'); rb.onclick = () => resetSettings(); p.append(rb); }
   p.append(h('h4', '', 'Object'));
   select(p, 'Shape', 'shape', Object.entries(SHAPES).map(([k, v]) => [k, v.label]));
   slider(p, 'Camera distance', 'dist', 1.6, 9, 0.05, x => (+x).toFixed(1));
@@ -3810,6 +4082,23 @@ class Thumbs {
   enqueue(fn) { this.q.push(fn); if (!this.busy) { this.busy = true; setTimeout(() => this.pump(), 0); } }
   pump() { const f = this.q.shift(); if (!f) { this.busy = false; return; } try { f(); } catch (e) { /* ignore a failing thumbnail */ } setTimeout(() => this.pump(), 8); }
 }
+// thumbnails that use uTime animate by themselves while they are on screen (one shared loop, ~20 fps)
+const animCards = new Set(); let animRaf = 0; const animT0 = performance.now();
+function animLoop(now) {
+  animRaf = 0; if (!animCards.size) return;
+  if (!document.hidden) for (const c of animCards) if (!c._last || now - c._last > 50) { c._last = now; thumbs.render(c._d, c._cv, 1.7 + (now - animT0) / 1000); }
+  animRaf = requestAnimationFrame(animLoop);
+}
+function makeThumbObserver() {
+  return new IntersectionObserver(es => {
+    for (const en of es) {
+      const c = en.target;
+      if (en.isIntersecting) { if (!c._done) { c._done = true; thumbs.enqueue(() => thumbs.render(c._d, c._cv, 1.7)); } if (c._anim) { animCards.add(c); if (!animRaf) animRaf = requestAnimationFrame(animLoop); } }
+      else animCards.delete(c);
+    }
+  }, { root: $('#tabbody'), rootMargin: '200px' });
+}
+function watchThumb(obs, card, d) { card._d = d; card._anim = /uTime/.test(d.ex); if (card._anim) card._cv.title = 'Animated: it uses uTime'; obs.observe(card); }
 let docsBuilt = false, docObserver = null;
 function buildDocs() {
   if (docsBuilt) return; docsBuilt = true;
@@ -3828,7 +4117,7 @@ function buildDocs() {
   const mkChip = (label, cat) => { const b = h('button', '', label); b.onclick = () => { catSel = catSel === cat ? null : cat; for (const x of chips.querySelectorAll('button[data-c]')) x.classList.toggle('on', x.dataset.c === (catSel || '\u0000')); apply(); }; b.dataset.c = cat; return b; };
   for (const c of CATS) chips.append(mkChip(c, c));
   q.oninput = apply;
-  docObserver = new IntersectionObserver(es => { for (const en of es) if (en.isIntersecting) { const c = en.target; docObserver.unobserve(c); thumbs.enqueue(() => thumbs.render(c._d, c._cv, 1.7)); } }, { root: $('#tabbody'), rootMargin: '300px' });
+  docObserver = makeThumbObserver();
   for (const d of DOCS) {
     const c = h('div', 'doc'); c.id = 'doc-' + d.n; c._d = d;
     const hd = h('div', 'dh'); hd.append(h('span', 'dn', d.n), h('span', 'dc', d.cat)); c.append(hd);
@@ -3840,57 +4129,71 @@ function buildDocs() {
       const bt = h('div', 'dbt'), op = h('button', '', 'Open as a shader'), cp = h('button', '', 'Copy code');
       op.onclick = () => openExample(d); cp.onclick = async () => { toast((await copyText(d.ex)) ? 'Copied' : 'Could not copy'); };
       bt.append(op, cp); c.append(bt);
-      if (/uTime/.test(d.ex)) { let raf = 0; th.title = 'Hover to animate'; cv.onmouseenter = () => { const t0 = performance.now(); const loop = () => { thumbs.render(d, cv, 1.7 + (performance.now() - t0) / 1000); raf = requestAnimationFrame(loop); }; loop(); }; cv.onmouseleave = () => { cancelAnimationFrame(raf); thumbs.render(d, cv, 1.7); }; }
-      docObserver.observe(c);
+      watchThumb(docObserver, c, d);
     }
     cards.push(c); pane.append(c);
   }
 }
 function openExample(d) {
-  let e = S.lib.find(x => x.key === 'x:' + d.n);
-  if (!e) { e = { key: 'x:' + d.n, name: 'Example: ' + d.n, cat: 'Docs examples', type: 'opaque', code: d.ex + '\n', builtin: false, uvals: {} }; S.lib.push(e); }
+  { const flat = !d.shape; S.scene.anim = true; if (!flat && SHAPES[S.scene.shape].flat) S.scene.shape = 'sphere'; if (flat && S.scene.shape !== 'rect' && !SHAPES[S.scene.shape].flat) S.scene.shape = 'square'; buildShapes(); buildScene(); }
+  let e = S.lib.find(x => x.key === exampleKey(d));
+  if (!e) { e = { key: exampleKey(d), name: 'Example: ' + d.n, cat: 'Docs examples', type: 'opaque', code: d.ex + '\n', builtin: false, uvals: {} }; S.lib.push(e); }
+  e.code = d.ex + '\n'; e.uvals = {}; e.type = 'opaque';
   openShader(e); toast('Opened the example as a shader. Edit it and see what changes.');
 }
 
 // ------------------------------------------------------------------ learn tab
 function mdText(src) {
   const link = n => (DOC_BY[n] ? '<a class="dl" data-doc="' + n + '">' + n + '</a>' : '<code>' + GL.esc(n) + '</code>');
-  const inline = t => GL.esc(t).replace(/\[\[(\w+)\]\]/g, (m, n) => link(n)).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/(^|[^*\w])\*([^*\n]+)\*(?![*\w])/g, '$1<i>$2</i>');
+  const inline = t => {   // code spans are protected first, so a * inside `code` is never read as italic
+    const codes = []; t = t.replace(/`([^`]+)`/g, (m, c) => { codes.push(c); return '\u0001' + (codes.length - 1) + '\u0002'; });
+    return GL.esc(t).replace(/\[\[(\w+)\]\]/g, (m, n) => link(n)).replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/(^|[\s(])\*(\S(?:[^*\n]*?\S)?)\*(?=[\s).,;:!?]|$)/g, '$1<i>$2</i>').replace(/\u0001(\d+)\u0002/g, (m, k) => '<code>' + GL.esc(codes[+k]) + '</code>');
+  };
   return src.split(/\n\n+/).map(par => '<p>' + par.split('\n').map(inline).join('<br>') + '</p>').join('');
 }
 let learnObserver = null;
 function lessonStepEntry(L, i) {
-  const key = 'l:' + L.id + ':' + i, st = L.steps[i];
+  const key = stepKey(L, i), st = L.steps[i];
   let e = S.lib.find(x => x.key === key);
   if (!e) { e = { key, name: 'Lesson: ' + L.title + ' (step ' + (i + 1) + ')', cat: 'Lessons', type: 'opaque', code: st.code + '\n', builtin: false, uvals: {} }; S.lib.push(e); }
+  e.code = st.code + '\n'; e.uvals = {}; e.type = 'opaque';   // always start from the original code of the step
   return e;
 }
-function learnThumb(card, d) {
-  const cv = card._cv; learnObserver.observe(card); card._d = d;
-  if (/uTime/.test(d.ex)) { let raf = 0; cv.title = 'Hover to animate'; cv.onmouseenter = () => { const t0 = performance.now(); const loop = () => { thumbs.render(d, cv, 1.7 + (performance.now() - t0) / 1000); raf = requestAnimationFrame(loop); }; loop(); }; cv.onmouseleave = () => { cancelAnimationFrame(raf); thumbs.render(d, cv, 1.7); }; }
-}
+function learnThumb(card, d) { watchThumb(learnObserver, card, d); }
 function renderLearn() {
   const pane = $('#tab-learn'); pane.textContent = '';
   if (learnObserver) learnObserver.disconnect();
-  learnObserver = new IntersectionObserver(es => { for (const en of es) if (en.isIntersecting) { const c = en.target; learnObserver.unobserve(c); thumbs.enqueue(() => thumbs.render(c._d, c._cv, 1.7)); } }, { root: $('#tabbody'), rootMargin: '300px' });
+  animCards.clear(); learnObserver = makeThumbObserver();
   pane.onclick = e => { const a = e.target.closest('a.dl'); if (a) { e.preventDefault(); openDoc(a.dataset.doc); } };
   const L = LESSONS.find(l => l.id === S.ui.lesson);
   if (!L) {
-    pane.append(h('div', 'hint', 'Short, hands-on lessons. Every step is a real shader: you see what it draws, which lines are new, and can open it in the editor to change numbers and break things. Start at the top.'));
+    pane.append(h('div', 'hint', 'Hands-on lessons, meant to be done in order. Each step teaches one small thing, shown in the "New in this step" box, and only uses things taught before it. Every step is a real shader: see what it draws, which lines are new, then open it and change the numbers.'));
     LESSONS.forEach((l, n) => {
       const c = h('div', 'lcard'); c.append(h('div', 'lt', (n + 1) + '. ' + l.title), h('div', 'lm', l.level + ' · ' + l.steps.length + ' steps'), h('div', 'ld', l.blurb.replace(/`/g, '')));
-      c.onclick = () => { S.ui.lesson = l.id; saveSoon(); renderLearn(); $('#tabbody').scrollTop = 0; }; pane.append(c);
+      c.onclick = () => goLesson(l.id, false); pane.append(c);
     });
     return;
   }
   const idx = LESSONS.indexOf(L), nav = h('div', 'lnav'), back = h('button', '', '← All lessons');
-  back.onclick = () => { S.ui.lesson = null; saveSoon(); renderLearn(); }; nav.append(back);
-  if (LESSONS[idx + 1]) { const nx = h('button', '', 'Next lesson →'); nx.onclick = () => { S.ui.lesson = LESSONS[idx + 1].id; saveSoon(); renderLearn(); $('#tabbody').scrollTop = 0; }; nav.append(nx); }
+  back.onclick = () => goLesson(null, false); nav.append(back);
+  if (LESSONS[idx + 1]) { const nx = h('button', '', 'Next lesson →'); nx.onclick = () => goLesson(LESSONS[idx + 1].id, true); nav.append(nx); }
   pane.append(nav, h('h3', 'ltitle', L.title), h('div', 'hint', L.blurb.replace(/`/g, '')));
+  { const rb = h('div', 'lreset'), btn = h('button', 'pri', '⟲ Reset preview settings'); btn.title = 'Shape, time, light, background, camera, line preview and sliders go back to the defaults';
+    btn.onclick = () => resetSettings(); rb.append(h('span', '', 'Clicking the Learn tab resets the preview settings (shape, time, light, background, camera) to the defaults. If you change them while experimenting, use this button to go back. Your panel sizes are never changed.'), btn); pane.append(rb); }
   let prev = null;
   L.steps.forEach((st, i) => {
     const c = h('div', 'doc lstep'), hd = h('div', 'dh'); hd.append(h('span', 'dn', (i + 1) + '. ' + st.t)); c.append(hd);
     const tx = h('div', 'dd ltx'); tx.innerHTML = mdText(st.x); c.append(tx);
+    if (st.new && st.new.length) {
+      const nb = h('div', 'lnew'); nb.append(h('div', 'lnl', 'New in this step'));
+      for (const n of st.new) {
+        const it = h('div', 'lni'), dd = typeof n === 'string' ? DOC_BY[n] : null, sig = typeof n === 'string' ? (dd ? dd.sig : n) : n.sig, desc = typeof n === 'string' ? (dd ? dd.d : '') : n.d;
+        const sg = h('code', '', sig); it.append(sg, h('div', 'lnd', desc));
+        if (dd) { const a = h('a', 'dl', 'more in Docs →'); a.dataset.doc = n; it.append(a); }
+        nb.append(it);
+      }
+      c.append(nb);
+    }
     if (st.table) {
       const tb = h('div', 'ltable');
       for (const [goal, names, tip] of st.table) {
@@ -3908,21 +4211,29 @@ function renderLearn() {
       b.append(th, pre); c.append(b);
       if (prev !== null) c.append(h('div', 'lleg', 'Green lines are new or changed since the last step.'));
       const bt = h('div', 'dbt'), op = h('button', 'pri', 'Open in editor'), cp = h('button', '', 'Copy code');
-      op.onclick = () => { openShader(lessonStepEntry(L, i)); toast('Opened. Drag numbers, click lines and watch the line preview.'); };
+      op.onclick = () => { applyStepView(L, st); openShader(lessonStepEntry(L, i)); toast('Opened. Drag numbers, click lines and watch the line preview.'); };
       cp.onclick = async () => toast((await copyText(st.code)) ? 'Copied' : 'Could not copy');
+      if (st.try) { const tr = h('div', 'ltry'); tr.append(h('b', '', 'Try: '), document.createTextNode(st.try)); c.append(tr); }
       bt.append(op, cp); c.append(bt); learnThumb(c, d); prev = st.code;
     }
     pane.append(c);
   });
   const end = h('div', 'lnav'); end.append(back.cloneNode(true)); end.firstChild.onclick = back.onclick;
-  if (LESSONS[idx + 1]) { const nx = h('button', 'pri', 'Next: ' + LESSONS[idx + 1].title + ' →'); nx.onclick = () => { S.ui.lesson = LESSONS[idx + 1].id; saveSoon(); renderLearn(); $('#tabbody').scrollTop = 0; }; end.append(nx); }
+  if (LESSONS[idx + 1]) { const nx = h('button', 'pri', 'Next: ' + LESSONS[idx + 1].title + ' →'); nx.onclick = () => goLesson(LESSONS[idx + 1].id, true); end.append(nx); }
   pane.append(end);
 }
 
+// scroll position of the tab area is remembered per tab (and per lesson in Learn)
+let scrollReady = false;
+const scrollKey = () => (S.ui.tab === 'learn' ? 'learn:' + (S.ui.lesson || '') : S.ui.tab);
+function saveScroll() { if (!S.ui.scroll) S.ui.scroll = {}; if (scrollReady) S.ui.scroll[scrollKey()] = $('#tabbody').scrollTop; }
+function restoreScroll() { const y = (S.ui.scroll || {})[scrollKey()] || 0; const tb = $('#tabbody'); tb.scrollTop = y; requestAnimationFrame(() => { if (Math.abs(tb.scrollTop - y) > 2) tb.scrollTop = y; }); }
+function goLesson(id, fresh) { saveScroll(); S.ui.lesson = id; if (fresh && S.ui.scroll) delete S.ui.scroll['learn:' + id]; saveSoon(); renderLearn(); restoreScroll(); }
 function showTab(name) {
+  saveScroll(); scrollReady = true;
   S.ui.tab = name; for (const b of document.querySelectorAll('#tabs button[data-tab]')) b.classList.toggle('on', b.dataset.tab === name);
   for (const p of document.querySelectorAll('.pane')) p.classList.toggle('on', p.id === 'tab-' + name);
-  if (name === 'docs') buildDocs(); if (name === 'learn') renderLearn(); saveSoon();
+  if (name === 'docs') buildDocs(); if (name === 'learn') renderLearn(); restoreScroll(); saveSoon();
 }
 function openDoc(word) {
   showTab('docs'); const c = document.getElementById('doc-' + word);
@@ -3935,14 +4246,16 @@ function openDoc(word) {
 function vizOpts() { return { mode: S.line.viz, lo: S.line.lo, hi: S.line.hi }; }
 function drawAll() {
   const sc = S.scene, base = { shape: sc.shape, time: S.time, seed: sc.seed, yaw: sc.yaw, pitch: sc.pitch, dist: sc.dist, spin: S.spin, bg: sc.bg, tod: sc.tod, az: sc.az, el: sc.el, uvals: S.uv };
-  pvMain.draw(Object.assign({ prog: S.prog, mode: 'shape', transparent: S.cur.type === 'transparent' }, base));
-  if (S.line.on && pvLine.ok) pvLine.draw(Object.assign({ prog: S.lineProg, mode: S.line.mode, transparent: false, viz: vizOpts() }, base, { bg: S.line.mode === 'flat' ? 0 : sc.bg }));
+  const sh = SHAPES[sc.shape] || SHAPES.rect;
+  pvMain.draw(Object.assign({ prog: S.prog, mode: sh.flat ? 'flat' : 'shape', full: !!sh.flat, stretch: !!sh.stretch, transparent: S.cur.type === 'transparent' }, base));
+  if (S.line.on && pvLine.ok) pvLine.draw(Object.assign({ prog: S.lineProg, mode: S.line.mode, transparent: false, viz: vizOpts() }, base, { shape: sh.flat ? 'sphere' : sc.shape, bg: S.line.mode === 'flat' ? 0 : sc.bg }));
 }
-let lastT = performance.now();
+let lastT = performance.now(), lastRd = 0;
 function tick(now) {
   const dt = Math.min(0.1, (now - lastT) / 1000); lastT = now;
   if (S.scene.anim) S.time += dt * S.scene.speed; if (S.scene.spin) S.spin += dt * 0.5;
   if (dirty || S.scene.anim || S.scene.spin) { dirty = false; drawAll(); }
+  if (now - lastRd > 250) { lastRd = now; const rd = $('#timeRead'); if (rd) rd.textContent = (S.scene.anim ? 'uTime ' + S.time.toFixed(1) : 'uTime paused at ' + S.time.toFixed(1)) + '  ↺'; }
   requestAnimationFrame(tick);
 }
 function orbit(cv, active) {
@@ -3997,7 +4310,7 @@ function init() {
   $('#file').onchange = async e => { for (const f of e.target.files) importText(f.name, await f.text()); e.target.value = ''; };
   $('#libFilter').oninput = renderLib;
   $('#bFocus').onclick = () => { document.body.classList.toggle('hide-pv'); markDirty(); };
-  for (const b of document.querySelectorAll('#tabs button[data-tab]')) b.onclick = () => showTab(b.dataset.tab);
+  for (const b of document.querySelectorAll('#tabs button[data-tab]')) b.onclick = () => { if (b.dataset.tab === 'learn') resetSettings({ quiet: true, keepUniforms: true }); showTab(b.dataset.tab); };
   // drop files anywhere
   let dc = 0; const drop = $('#drop');
   addEventListener('dragenter', e => { if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')) { dc++; drop.style.display = 'flex'; } });
@@ -4018,7 +4331,7 @@ function init() {
       sp2.addEventListener('pointermove', move); sp2.addEventListener('pointerup', up); };
     sp2.ondblclick = () => { S.ui[k] = HK[k][1]; applyH(); saveSoon(); };
   }
-  addEventListener('resize', applyH); applyH();
+  window.__applyH = applyH; addEventListener('resize', applyH); applyH();
   new ResizeObserver(markDirty).observe($('#pvwrap')); new ResizeObserver(markDirty).observe($('#lpWrap'));
   addEventListener('beforeunload', persist);
   showTab(S.ui.tab === 'docs' ? 'docs' : S.ui.tab || 'shaders');
