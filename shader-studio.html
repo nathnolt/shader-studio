@@ -2630,15 +2630,18 @@ Feed it the distance from the middle and you get something that is **bright in t
   float glow = exp(-d * 6.0);
   gl_FragColor = vec4(vec3(glow), 1.0);
 }` },
-  { t: 'Add the glow behind the orb', x: `A glow is **extra light**, so we *add* it: \`bg\` becomes the dark blue plus orange times the glow amount (0.6 to keep it gentle). We do this to the background **before** the orb is mixed on top, so the glow never covers the orb itself.`,
-    try: 'Change 0.6 to make the glow stronger or weaker.',
+  { t: 'Add the glow behind the orb', x: `A glow is **light**, so it can be brighter than a normal colour. We multiply \`exp(-d * 6.0)\` by 4.0: right next to the orb it is far above 1.0 (the screen clips it, so it looks hot and saturated) and it fades out smoothly with distance.
+
+The glow becomes the **background colour** itself: \`vec3(glow, glow * 0.6, 0.0)\` means red = glow, green = 60% of glow, no blue, so it fades from orange-yellow into black. The orb is now a sun-yellow colour, and \`mix(bg, sunColor, orb)\` lays it on top of the glow. Because the glow is the *background* layer, it never covers the orb.`,
+    try: 'Change 4.0 for a stronger or weaker glow, 6.0 for a tighter or wider one, and the 0.6 to change the glow colour.',
     code: `void main() {
   vec2 p = vUv - 0.5;
   float d = length(p);
-  float orb = 1.0 - smoothstep(0.25, 0.29, d);
-  float glow = exp(-d * 6.0);
-  vec3 bg = vec3(0.02, 0.02, 0.08) + vec3(1.0, 0.4, 0.1) * glow * 0.6;
-  vec3 col = mix(bg, vec3(1.0, 0.6, 0.2), orb);
+  float orb = 1.0 - smoothstep(0.25, 0.27, d);
+  float glow = exp(-d * 6.0) * 4.0;
+  vec3 bg = vec3(glow, glow * 0.6, 0.0);
+  vec3 sunColor = vec3(1.0, 1.0, 0.2);
+  vec3 col = mix(bg, sunColor, orb);
   gl_FragColor = vec4(col, 1.0);
 }` },
   { t: 'sin: a smooth wave', x: `[[sin]](x) turns a steadily growing number into a **wave** that goes up and down between -1 and 1 and repeats forever. Feed it the x position times 20 and you get 20-ish bumps across the picture.
@@ -2657,10 +2660,11 @@ The orb radius becomes \`r = 0.25 + 0.03 * sin(uTime * 3.0)\`: a base size of 0.
   vec2 p = vUv - 0.5;
   float d = length(p);
   float r = 0.25 + 0.03 * sin(uTime * 3.0);
-  float orb = 1.0 - smoothstep(r, r + 0.04, d);
-  float glow = exp(-d * 6.0);
-  vec3 bg = vec3(0.02, 0.02, 0.08) + vec3(1.0, 0.4, 0.1) * glow * 0.6;
-  vec3 col = mix(bg, vec3(1.0, 0.6, 0.2), orb);
+  float orb = 1.0 - smoothstep(r, r + 0.02, d);
+  float glow = exp(-d * 6.0) * 4.0;
+  vec3 bg = vec3(glow, glow * 0.6, 0.0);
+  vec3 sunColor = vec3(1.0, 1.0, 0.2);
+  vec3 col = mix(bg, sunColor, orb);
   gl_FragColor = vec4(col, 1.0);
 }` },
 ]);
