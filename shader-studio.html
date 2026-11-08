@@ -163,6 +163,19 @@ body.hide-pv .hsplit { display: none; }
 button.tread { font: 11px var(--mono); color: #cfd6e4; padding: 2px 7px; background: #12141a; } button.tread:hover { border-color: var(--accent); }
 .dnote { margin: 2px 2px 6px; font-size: 11.5px; } #docChips.dim button[data-c] { opacity: .45; }
 
+.stag { display: inline-block; font: 600 9.5px/1 var(--mono); text-transform: uppercase; letter-spacing: .05em; color: #8fd0ff; background: #14304f; border: 1px solid #2f5f94; border-radius: 4px; padding: 2px 5px; margin-left: 6px; vertical-align: middle; }
+.dstudio, .lstudio { font-size: 11.5px; line-height: 1.45; color: #9cc4e6; border-left: 3px solid #2f5f94; padding: 3px 8px; margin: 5px 0; background: rgba(47,95,148,.10); }
+.lstudio { margin: 3px 0 2px; font-size: 11px; }
+.dsrc { margin: 5px 0 2px; } .dsrc summary { cursor: pointer; color: #8fd0ff; font-size: 11.5px; } .dsrc pre { margin-top: 5px; max-height: 260px; overflow: auto; }
+.dlegend { margin: 0 2px 6px; font-size: 11.5px; }
+button.origin.on { border-color: #2f5f94; color: #8fd0ff; }
+.ac-it .ac-s { font: 600 9px/1 var(--mono); text-transform: uppercase; color: #8fd0ff; background: #14304f; border: 1px solid #2f5f94; border-radius: 3px; padding: 2px 4px; flex: none; }
+.ac-studio { color: #8fd0ff; font-size: 11px; margin-bottom: 2px; }
+.tip-studio { color: #8fd0ff; font-size: 11.5px; margin: 2px 0; }
+
+#sbar { align-items: center; } #sbar .sbsp { flex: 1; } #sbar .sbx { color: var(--dim); }
+#sbar button { font-size: 11px; padding: 1px 8px; margin: -1px 0; }
+
 </style></head><body>
 <div id="app">
   <div id="top">
@@ -178,7 +191,7 @@ button.tread { font: 11px var(--mono); color: #cfd6e4; padding: 2px 7px; backgro
     <div id="center">
       <div id="editor"></div>
       <div id="errs"></div>
-      <div id="sbar"><span id="sbPos">Ln 1, Col 1</span><span>GLSL ES 3.00</span><span>Ctrl+Enter compile</span></div>
+      <div id="sbar"><span id="sbPos">Ln 1, Col 1</span><span>GLSL ES 3.00</span><span>Ctrl+Enter compile</span><span class="sbsp"></span><span class="sbx">Export:</span><button id="xGlsl" title="Download a stand-alone GLSL file with every studio helper it uses">GLSL file</button><button id="xCopy" title="Copy the stand-alone GLSL to the clipboard">Copy GLSL</button><button id="xToy" title="Download a version you can paste into ShaderToy">ShaderToy</button></div>
     </div>
     <div class="split" id="rsplit" title="Drag to resize"></div>
     <div id="right">
@@ -941,6 +954,91 @@ class GLView {
   }
 }
 
+/* ===== export: turn a studio shader into stand-alone GLSL (or ShaderToy) with every studio helper it uses ===== */
+const Export = (() => {
+  const stripComments = s => s.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ');
+  const idents = s => new Set(stripComments(s).match(/[A-Za-z_]\w*/g) || []);
+  // split the prelude into top-level chunks (one function or one declaration each)
+  const chunks = (() => {
+    const out = []; const src = PRELUDE; let i = 0;
+    while (i < src.length) {
+      while (i < src.length && /\s/.test(src[i])) i++; if (i >= src.length) break;
+      const start = i; let dep = 0, par = 0;
+      while (i < src.length) { const ch = src[i++]; if (ch === '{') dep++; else if (ch === '}') { dep--; if (dep === 0) break; } else if (ch === '(') par++; else if (ch === ')') par--; else if (ch === ';' && dep === 0 && par === 0) break; }
+      const text = src.slice(start, i).trim(); const body = stripComments(text);
+      const m = /^(?:const\s+)?\w+\s+(\w+)\s*[(=;,]/.exec(body.trim()); if (!m) continue;
+      out.push({ name: m[1], text, ids: idents(text), fn: /\)\s*\{/.test(body) });
+    }
+    return out;
+  })();
+  // header declarations the studio provides (varyings, uniforms, #defines)
+  const head = (() => {
+    const out = [];
+    for (const line of HEAD.split('\n')) {
+      let m;
+      if ((m = /^#define\s+(\w+)\s+(.*)$/.exec(line))) out.push({ name: m[1], text: line, ids: idents(m[2]), kind: 'define' });
+      else if ((m = /^(in|uniform)\s+(?:highp\s+)?(\w+)\s+(\w+)\s*;/.exec(line))) out.push({ name: m[3], text: line, ids: new Set(), kind: m[1] });
+    }
+    return out;
+  })();
+  const NEED_3D = new Set(['vPos', 'vP3', 'vN', 'vW', 'vWN', 'cameraPosition', 'uLightDir', 'uLightCol', 'uAmbSky', 'uAmbGround']);
+  function analyze(code) {
+    const user = stripBuiltinUniforms(code), need = idents(user);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const c of chunks.concat(head)) if (need.has(c.name)) for (const id of c.ids) if (!need.has(id)) { need.add(id); changed = true; }
+    }
+    return {
+      user, need,
+      fns: chunks.filter(c => need.has(c.name)),
+      decls: head.filter(h => need.has(h.name)),
+    };
+  }
+  const fmt = (t, v) => {
+    const f = x => { const s = (+x).toFixed(4).replace(/0+$/, '').replace(/\.$/, '.0'); return s; };
+    if (t === 'float') return f(v); if (t === 'int') return String(Math.round(v)); if (t === 'bool') return v ? 'true' : 'false';
+    return t + '(' + [].concat(v).map(f).join(', ') + ')';
+  };
+  /** stand-alone GLSL ES 3.00 fragment shader */
+  function glsl(code, name, uv) {
+    const a = analyze(code), L = [];
+    const usedHelpers = a.fns.map(c => c.name).filter((n, i, arr) => arr.indexOf(n) === i);
+    const ins = a.decls.filter(d => d.kind === 'in').map(d => d.text.replace(/^in /, '')), unis = a.decls.filter(d => d.kind === 'uniform').map(d => d.text.replace(/^uniform /, ''));
+    L.push('#version 300 es');
+    L.push('// Exported from Shader Studio: ' + (name || 'shader'));
+    L.push('// Plain GLSL ES 3.00 fragment shader. Real GLSL = everything the language gives you (float, vec3, mix, sin, ...).');
+    L.push('// The section "STUDIO HELPERS" is code this studio wrote (' + (usedHelpers.length ? usedHelpers.join(', ') : 'none used') + '); it is included so the file is self-contained.');
+    if (ins.length || unis.length) L.push('// Your program must supply: ' + [ins.length ? 'varyings ' + ins.join(' ').replace(/;/g, ',').replace(/,\s*$/, '') : '', unis.length ? 'uniforms ' + unis.join(' ').replace(/;/g, ',').replace(/,\s*$/, '') : ''].filter(Boolean).join(' | '));
+    L.push('precision highp float;', 'precision highp int;', 'precision highp sampler2D;', 'out highp vec4 fragColor;', '');
+    const defs = a.decls.filter(d => d.kind === 'define'), ds = a.decls.filter(d => d.kind !== 'define');
+    // the studio's own #defines come first (gl_FragColor, texture2D, vP...) but their inputs come before them
+    for (const d of ds) L.push(d.text); if (ds.length) L.push('');
+    if (defs.length) { L.push('// Studio shortcuts (these are #defines, not GLSL):'); for (const d of defs) L.push(d.text); L.push(''); }
+    if (a.fns.length) { L.push('// ===================== STUDIO HELPERS (not part of GLSL) ====================='); for (const c of a.fns) L.push(c.text); L.push('// ===================== END STUDIO HELPERS =====================', ''); }
+    L.push('// ===================== YOUR SHADER =====================', a.user.replace(/\s+$/, ''), '');
+    return L.join('\n');
+  }
+  /** ShaderToy (paste into a new shader). Flat shaders work as they are; 3D inputs get simple stand-ins. */
+  function shadertoy(code, name, uv) {
+    const a = analyze(code), L = [];
+    let user = a.user.replace(/^([ \t]*)uniform\s+(?:highp\s+|mediump\s+|lowp\s+)?(\w+)\s+(\w+)\s*;([ \t]*\/\/.*)?$/gm, (m, ind, t, n, c) => (uv && uv[n] !== undefined ? ind + 'const ' + t + ' ' + n + ' = ' + fmt(t, uv[n]) + ';   // was a studio slider' : m));
+    user = user.replace(/\bvoid\s+main\s*\(\s*(?:void)?\s*\)/, 'void studioMain()');
+    const n = a.need, uses = x => n.has(x);
+    L.push('// Exported from Shader Studio: ' + (name || 'shader') + ' (ShaderToy version)');
+    L.push('// Paste into a new ShaderToy shader. "STUDIO HELPERS" is code the studio wrote, not GLSL. Stand-ins below replace the studio inputs.');
+    if (['vPos', 'vP3', 'vN', 'vW', 'vWN', 'cameraPosition', 'uLightDir'].some(uses)) L.push('// NOTE: this shader uses 3D inputs; ShaderToy has no 3D object, so a flat surface facing the camera is faked.');
+    L.push('vec4 fragColor;', '#define gl_FragColor fragColor', '#define texture2D texture');
+    L.push('vec2 vUv; vec3 vPos, vN, vW, vWN;', '#define vP3 vPos', '#define vP (vUv * 4.0)', '#define uTime iTime', '#define uResolution iResolution.xy', '#define uTex0 iChannel0', '#define uNoiseTex iChannel1');
+    L.push('const float uSeed = 1.0;', 'const vec3 cameraPosition = vec3(0.0, 0.0, 3.0);', 'const vec3 uLightDir = vec3(0.4851, 0.7276, 0.4851);', 'const vec3 uLightCol = vec3(1.0, 0.95, 0.85);', 'const vec3 uAmbSky = vec3(0.21, 0.24, 0.3);', 'const vec3 uAmbGround = vec3(0.09, 0.08, 0.07);', '');
+    if (a.fns.length) { L.push('// ===================== STUDIO HELPERS (not part of GLSL) ====================='); for (const c of a.fns) L.push(c.text); L.push('// ===================== END STUDIO HELPERS =====================', ''); }
+    L.push('// ===================== YOUR SHADER =====================', user.replace(/\s+$/, ''), '');
+    L.push('void mainImage(out vec4 outColor, in vec2 fragCoord) {', '  vUv = fragCoord / iResolution.xy;', '  vPos = vec3(vUv * 2.0 - 1.0, 0.0); vN = vec3(0.0, 0.0, 1.0); vW = vPos; vWN = vN;', '  fragColor = vec4(0.0, 0.0, 0.0, 1.0);', '  studioMain();', '  outColor = vec4(fragColor.rgb, 1.0);', '}', '');
+    return L.join('\n');
+  }
+  return { glsl, shadertoy, analyze };
+})();
+
 /* ===== docs.js : reference of everything you can use, each with a runnable example ===== */
 const DOCS = [];
 const CATS = ['Language', 'Built-in variables', 'Angles & trig', 'Power & exponent', 'Common math', 'Geometry', 'Matrices', 'Compare vectors', 'Derivatives', 'Textures', 'Noise & random', 'Shapes (2D distance)', 'Colour', 'Lighting', 'Helpers'];
@@ -1195,7 +1293,7 @@ add('Built-in variables', 'var', 'gl_FragCoord', 'vec4 gl_FragCoord', 'Pixel pos
   vec2 cell = floor(gl_FragCoord.xy / 32.0);        // 32 pixel squares
   gl_FragColor = vec4(vec3(mod(cell.x + cell.y, 2.0) * 0.6 + 0.2), 1.0);
 }`);
-add('Built-in variables', 'var', 'gl_FragColor', 'vec4 gl_FragColor', 'The colour (red, green, blue, alpha) this pixel ends up with. Every shader must set it. finish() gives you lighting for free.', `void main() {
+add('Built-in variables', 'var', 'gl_FragColor', 'vec4 gl_FragColor', 'The colour (red, green, blue, alpha) this pixel ends up with. Every shader must set it. Studio note: modern GLSL (ES 3.00, what the studio runs) has no gl_FragColor; you declare your own output variable. The studio quietly renames gl_FragColor to that output so older-style shaders work. finish() (also a studio helper) gives you lighting for free.', `void main() {
   gl_FragColor = vec4(vUv, 0.5, 1.0);
 }`);
 add('Built-in variables', 'var', 'gl_FrontFacing', 'bool gl_FrontFacing', 'True when you see the front of the surface, false when you see the back (inside of a plane or open shape).', `void main() {
@@ -1204,15 +1302,25 @@ add('Built-in variables', 'var', 'gl_FrontFacing', 'bool gl_FrontFacing', 'True 
 }`);
 add('Built-in variables', 'cn', 'PI', 'const float PI', '3.14159…: half a turn in radians. TAU = 2π is a full turn.', fx('0.5 + 0.5 * sin(x * PI)'));
 add('Built-in variables', 'cn', 'TAU', 'const float TAU', '6.28318…: a full turn in radians.', fx('0.5 + 0.5 * sin(x * TAU)'));
-add('Built-in variables', 'var', 'gNormal', 'vec3 gNormal; float gHasN', 'Set gNormal to your own surface normal (a bump map) and gHasN = 1.0 before calling finish(), and the lighting uses it.', `void main() {
+add('Built-in variables', 'var', 'gNormal', 'vec3 gNormal', 'Your own surface normal (for a bump map). finish() only looks at it when gHasN is 1.0.', `void main() {
   float h = noise(vUv * 30.0);
   gNormal = bumpFromHeight(h, 0.08);
   gHasN = 1.0;
   gl_FragColor = finish(vec3(0.75, 0.62, 0.45), 1.0);
 }`, { shape: true });
-add('Built-in variables', 'var', 'gShine', 'float gShine; float gRough', 'Make finish() add a sun highlight. gShine is how strong (0 = none), gRough how wide and dull (0 = small and hard, 1 = wide).', `void main() {
+add('Built-in variables', 'var', 'gHasN', 'float gHasN', 'The switch for gNormal: set it to 1.0 and finish() lights the surface with gNormal instead of the real one. 0.0 (the start value) means "ignore gNormal".', `void main() {
+  gNormal = bumpFromHeight(noise(vUv * 30.0), 0.08);
+  gHasN = 1.0;   // try 0.0: the bumps disappear
+  gl_FragColor = finish(vec3(0.75, 0.62, 0.45), 1.0);
+}`, { shape: true });
+add('Built-in variables', 'var', 'gShine', 'float gShine', 'How strong a sun highlight finish() adds (0 = none, 1 = clear). The size of the highlight is set by gRough.', `void main() {
   gShine = 1.0;
   gRough = 0.25;
+  gl_FragColor = finish(vec3(0.75, 0.3, 0.2), 1.0);
+}`, { shape: true });
+add('Built-in variables', 'var', 'gRough', 'float gRough', 'How wide and dull the highlight from gShine is: 0.05 = small and hard like polished metal, 1 = wide and soft like plastic. Starts at 0.6. Only matters when gShine is above 0.', `void main() {
+  gShine = 1.0;
+  gRough = 0.9;   // try 0.1
   gl_FragColor = finish(vec3(0.75, 0.3, 0.2), 1.0);
 }`, { shape: true });
 add('Built-in variables', 'var', 'gSpec', 'vec3 gSpec', 'Extra light added after the lighting, not multiplied by the surface colour (hard shine or glow).', `void main() {
@@ -1227,6 +1335,11 @@ add('Built-in variables', 'var', 'gGlint', 'vec3 gGlint', 'Like gSpec, a highlig
 add('Built-in variables', 'var', 'gBlow', 'float gBlow', 'Over-expose the lit side: where the sun hits, the colour pushes toward white (0 = off, 1 = strong).', `void main() {
   gBlow = 1.0;
   gl_FragColor = finish(vec3(0.8, 0.4, 0.2), 1.0);
+}`, { shape: true });
+
+add('Built-in variables', 'var', 'gDirect', 'float gDirect', 'How directly the sun hits this point (0 = turned away, 1 = facing the sun). finish() and sceneLight() fill it in, so it is only meaningful after one of them has run. Handy for effects that should only show on the lit side.', `void main() {
+  vec3 base = finish(vec3(0.5), 1.0).rgb;   // fills in gDirect
+  gl_FragColor = vec4(vec3(gDirect), 1.0);
 }`, { shape: true });
 
 // ------------------------------------------------------------------ angles & trig
@@ -1408,7 +1521,7 @@ add('Derivatives', 'fn', 'fwidth', 'fwidth(v)', 'abs(dFdx(v)) + abs(dFdy(v)): ro
 add('Textures', 'fn', 'texture', 'texture(sampler, uv)', 'Read a colour from a texture at coordinates uv (0..1). texture2D() is the same function under its old name.', `void main() {
   gl_FragColor = texture(uTex0, vUv * 1.5);
 }`, { ret: 'vec4', G });
-add('Textures', 'fn', 'texture2D', 'texture2D(sampler, uv)', 'Old name of texture().', `void main() {
+add('Textures', 'fn', 'texture2D', 'texture2D(sampler, uv)', 'Old name of texture(). Studio note: removed from modern GLSL; the studio keeps it working by turning it into texture().', `void main() {
   vec2 uv = vUv + 0.03 * vec2(sin(vUv.y * 20.0), 0.0);   // wobble the lookup
   gl_FragColor = texture2D(uTex0, uv);
 }`, { ret: 'vec4', G });
@@ -1557,6 +1670,11 @@ add('Helpers', 'fn', 'plot', 'plot(float v, float y)', 'A thin 0..1 line where v
 add('Helpers', 'fn', 'graphBG', 'graphBG(vec2 uv)', 'A dark graph-paper background for plotting.', `void main() {
   gl_FragColor = vec4(graphBG(vUv), 1.0);
 }`, Object.assign({ ret: 'vec3' }, STUDIO));
+
+// everything the studio adds on top of real GLSL gets flagged (the Docs tab and autocomplete mark it)
+for (const n of 'vUv vP vPos vP3 vN vW vWN uTime uSeed uResolution uLightDir uLightCol uAmbSky uAmbGround cameraPosition uTex0 uNoiseTex PI TAU gNormal gHasN gShine gRough gSpec gGlint gBlow gDirect gl_FragColor texture2D'.split(' ')) {
+  const d = DOCS.find(x => x.n === n); if (d) d.studio = true; else console.warn('studio flag: no docs entry for ' + n);
+}
 
 for (const d of DOCS) { const m = /\(([^)]*)\)/.exec(d.sig); d.argc = d.kind === 'fn' ? (m && m[1].trim() ? m[1].split(',').length : 0) : 0; d.key = d.n; }
 const DOC_BY = {}; for (const d of DOCS) DOC_BY[d.n] = d;
@@ -2323,7 +2441,9 @@ lesson('basics', 'The very first shader: main() and colour', 'Absolute beginner'
   'One line that paints everything red, then what `void main()`, `gl_FragColor`, `vec4` and the four colour numbers really mean.', [
   { t: 'One line, one colour', x: `This is a complete shader. It has exactly one job: **decide the colour of a pixel**. The line sets \`gl_FragColor\`, the shader's output, to four numbers: red, green, blue and alpha.
 
-Red is 1.0 (full), green and blue are 0.0 (none), so everything is red. The \`void main() { }\` around it is the wrapper every shader needs; the next step explains it.`,
+Red is 1.0 (full), green and blue are 0.0 (none), so everything is red. The \`void main() { }\` around it is the wrapper every shader needs; the next step explains it.
+
+**Two kinds of names, so you always know what is real:** *GLSL* is the language itself (\`void\`, \`float\`, \`vec4\`, \`mix\`, \`sin\`…); it works in every shader program. This studio also writes some **helpers and variables of its own** (like \`finish\`, \`noise\`, \`vUv\`, \`uTime\`). Those carry a blue **studio-made** tag whenever they are introduced, and they only exist here. Even \`gl_FragColor\` is a bit of both: modern GLSL has no such name, so the studio renames it to the real output variable for you.`,
     new: ['gl_FragColor', 'vec4'], try: 'Click the line and change a number, for example the second one to 1.0. The big preview updates instantly.',
     code: `void main() {
   gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
@@ -2939,24 +3059,31 @@ The picture shows the direction of every pixel as seen from the middle. A direct
   vec2 dir = normalize(p);
   gl_FragColor = vec4(dir * 0.5 + 0.5, 0.5, 1.0);
 }` },
-  { t: 'dot: how much do two directions agree?', x: `[[dot]](a, b) is a single number that says **how much two vectors point the same way**. For two directions (length 1): **1** = identical, **0** = at right angles, **-1** = opposite.
+  { t: 'dot: how much do two directions agree?', x: `[[dot]](a, b) is a single number that says **how much two directions point the same way**. For two vectors of length 1 it is exactly: **1** when they point the same way, **0** when they are at right angles, **-1** when they point opposite ways. In between it changes smoothly with the angle.
 
-Here every pixel's position is compared with a fixed direction (pointing right and a bit up). Pixels far along that direction are bright, those behind are dark, with the middle line at 0. (The \`* 0.5 + 0.5\` shows the negative side too.) **Light brightness is exactly this**: the surface direction compared with the light direction.`,
-    new: ['dot'], try: 'Change vec2(1.0, 0.5) to vec2(0.0, 1.0): now it measures "how far up".',
+Every pixel has a direction as seen from the middle: \`normalize(p)\` (length 1). We compare it with one fixed direction \`dir\` (pointing right and a bit up, also length 1). Because the result is -1 to 1 and the screen shows 0 to 1, we squash it with \`* 0.5 + 0.5\`:
+
+**white** = this pixel is in the same direction as \`dir\` (dot = 1)
+**mid grey** = at right angles to it (dot = 0)
+**black** = in the opposite direction (dot = -1)
+
+**Light brightness is exactly this**: the direction the surface faces compared with the direction of the light.`,
+    new: ['dot'], try: 'Change vec2(1.0, 0.5) to vec2(0.0, 1.0): the white moves to the top. Then delete "normalize(" from the toward line (and its bracket) to see what happens when the length is not 1.',
     code: `void main() {
-  vec2 p = (vUv - 0.5) * 2.0;
+  vec2 p = vUv - 0.5;
+  vec2 toward = normalize(p);
   vec2 dir = normalize(vec2(1.0, 0.5));
-  float s = dot(p, dir);
+  float s = dot(toward, dir);
   gl_FragColor = vec4(vec3(s * 0.5 + 0.5), 1.0);
 }` },
-  { t: 'max: cut off the negative part', x: `[[max]](a, b) gives the **larger** of two numbers. \`max(s, 0.0)\` means "s, but never below 0": it clips off the negative side. In the last picture the dark half was negative; with \`max\` it becomes plain 0 (black) and only the part that agrees with the direction stays.
+  { t: 'max: cut off the negative part', x: `[[max]](a, b) gives the **larger** of two numbers. \`max(s, 0.0)\` means "s, but never below 0": it clips off the negative side. In the last picture the dark half (dot below 0) is exactly the side facing **away** from \`dir\`; with \`max\` that whole half becomes plain 0 (black), and only the side that agrees with the direction stays, fading from white to black as the angle approaches 90°.
 
-You'll use this for light: the side of an object facing away from the light must be 0 (no light), not negative.`,
+This is the sun on a ball: the half facing the light is lit, fading towards the edge, and the half facing away gets **0 light, not negative light**. You'll use exactly this for lighting.`,
     new: ['max'], try: 'Replace 0.0 with 0.5 to raise the floor.',
     code: `void main() {
-  vec2 p = (vUv - 0.5) * 2.0;
+  vec2 p = vUv - 0.5;
   vec2 dir = normalize(vec2(1.0, 0.5));
-  float s = max(dot(p, dir), 0.0);
+  float s = max(dot(normalize(p), dir), 0.0);
   gl_FragColor = vec4(vec3(s), 1.0);
 }` },
   { t: 'atan: the angle around the middle', x: `Any position can also be described as **an angle around the middle and a distance from it**. [[atan]](y, x) gives the angle in *radians* from the right-hand direction, between about -3.14 and 3.14. Dividing by \`TAU\` (a built-in number, 6.28, one full turn) makes it -0.5 to 0.5, and adding 0.5 makes it 0 to 1 all the way round.
@@ -3038,10 +3165,12 @@ This one line is the classic **diffuse** (Lambert) lighting.`,
   col = col + vec3(0.4, 0.6, 1.0) * fresnel(n, v, 3.0) * 0.5;
   gl_FragColor = vec4(col, 1.0);
 }` },
-  { t: 'Let finish() do all of that', x: `[[finish]](colour, alpha) does the lighting for you: ambient, sun, plus extras. In normal shaders you only decide the **albedo** (surface colour) and call \`finish\` on the last line.
+  { t: 'Let finish() do all of that', x: `**\`finish\` is not part of GLSL: this studio wrote it.** In other shader programs it does not exist; you would have to write (or copy) the lighting yourself, which is what the previous steps did by hand. In the Docs tab you can open \`finish\` and read the plain GLSL behind it.
+
+[[finish]](colour, alpha) does the lighting for you: ambient, sun, plus extras. In normal shaders you only decide the **albedo** (surface colour) and call \`finish\` on the last line.
 
 Two extra settings you can assign before calling it: [[gShine]] (0 to 1, how bright the highlight is) and [[gRough]] (how wide it is, lower = tighter). Writing your own lighting, as we just did, is only needed for unusual looks (toon shading, custom rims).`,
-    new: ['finish', 'gShine', N('gRough', 'float gRough', 'How wide and dull the highlight is: 0 is small and hard, 1 is wide and soft.')], shape: true, try: 'Set gShine to 0.0 for a matte look, or gRough to 0.8.',
+    new: ['finish', 'gShine', 'gRough'], shape: true, try: 'Set gShine to 0.0 for a matte look, or gRough to 0.8.',
     code: `void main() {
   vec3 albedo = vec3(0.9, 0.5, 0.3);
   gShine = 1.0;
@@ -3068,7 +3197,7 @@ So a bump map is just a greyscale picture: any number from 0 to 1 works (noise, 
 **3.** use \`finish\` for the final colour (so lighting is applied).
 
 The sphere now looks lumpy, but its outline is still perfectly round.`,
-    new: ['bumpFromHeight', 'gNormal', N('gHasN', 'float gHasN', 'Set it to 1.0 to tell finish() to use your gNormal instead of the real surface normal.')], shape: true, try: 'Change 0.08 (the strength) to 0.01 and then to 0.3.',
+    new: ['bumpFromHeight', 'gNormal', 'gHasN'], shape: true, try: 'Change 0.08 (the strength) to 0.01 and then to 0.3.',
     code: `void main() {
   float h = fbm3(vPos * 6.0);
   gNormal = bumpFromHeight(h, 0.08);
@@ -3735,10 +3864,10 @@ class CodeEditor {
     a.items.forEach((it, i) => {
       let lab = ''; const lp = (a.prefix || '').toLowerCase(), ll = it.label.toLowerCase();
       if (lp && ll.startsWith(lp)) lab = '<b>' + GL.esc(it.label.slice(0, lp.length)) + '</b>' + GL.esc(it.label.slice(lp.length)); else lab = GL.esc(it.label);
-      h += '<div class="ac-it' + (i === a.sel ? ' on' : '') + '" data-i="' + i + '"><span class="ac-k k-' + it.kind + '">' + (kinds[it.kind] || '?') + '</span><span class="ac-l">' + lab + '</span><span class="ac-d">' + GL.esc(it.detail || '') + '</span></div>';
+      h += '<div class="ac-it' + (i === a.sel ? ' on' : '') + '" data-i="' + i + '"><span class="ac-k k-' + it.kind + '">' + (kinds[it.kind] || '?') + '</span><span class="ac-l">' + lab + '</span><span class="ac-d">' + GL.esc(it.detail || '') + '</span>' + (it.studio ? '<span class="ac-s" title="Made by this studio, not part of GLSL">studio</span>' : '') + '</div>';
     });
     h += '</div>'; const cur = a.items[a.sel];
-    if (cur && (cur.doc || cur.sig)) h += '<div class="ac-doc">' + (cur.sig ? '<code>' + GL.esc(cur.sig) + '</code>' : '') + (cur.doc ? '<div>' + GL.esc(cur.doc) + '</div>' : '') + '</div>';
+    if (cur && (cur.doc || cur.sig)) h += '<div class="ac-doc">' + (cur.sig ? '<code>' + GL.esc(cur.sig) + '</code>' : '') + (cur.studio ? '<div class="ac-studio">Studio-made, not part of GLSL</div>' : '') + (cur.doc ? '<div>' + GL.esc(cur.doc) + '</div>' : '') + '</div>';
     el.innerHTML = h; el.hidden = false;
     const on = el.querySelector('.ac-it.on'); if (on) on.scrollIntoView({ block: 'nearest' });
   }
@@ -3878,7 +4007,7 @@ const STATIC_ITEMS = (() => {
   const items = [];
   for (const d of DOCS) {
     if (!/^[A-Za-z_]\w*$/.test(d.n) || d.concept || (d.kind === 'kw' && /^[A-Z]/.test(d.n))) continue;
-    items.push({ label: d.n, kind: d.kind === 'var' && d.n[0] === 'u' ? 'uni' : (KIND[d.kind] || 'var'), detail: d.ret || (d.kind === 'var' || d.kind === 'cn' ? d.sig.split(/[ ;]/)[0] : ''), sig: d.sig, doc: d.d, argc: d.argc, rank: d.studio ? 1 : 2 });
+    items.push({ label: d.n, kind: d.kind === 'var' && d.n[0] === 'u' ? 'uni' : (KIND[d.kind] || 'var'), detail: d.ret || (d.kind === 'var' || d.kind === 'cn' ? d.sig.split(/[ ;]/)[0] : ''), sig: d.sig, doc: d.d, argc: d.argc, rank: d.studio ? 1 : 2, studio: !!d.studio });
   }
   const have = new Set(items.map(i => i.label));
   for (const k of 'else while do return break continue switch case default true false in out inout highp mediump lowp precision'.split(' ')) if (!have.has(k)) items.push({ label: k, kind: 'kw', rank: 3 });
@@ -3894,6 +4023,20 @@ const STATIC_ITEMS = (() => {
   sn('define', '#define $0', 'A text replacement made before compiling.');
   return items;
 })();
+// ------------------------------------------------------------------ studio-made vs real GLSL
+function studioWhy(d) {
+  if (d.kind === 'fn') return 'Studio helper: not part of GLSL. This studio wrote it and adds it above your code. It will not exist in other programs unless you copy its code.';
+  if (d.kind === 'cn') return 'Studio constant: not part of GLSL. The studio declares it above your code.';
+  return 'Studio variable: not part of GLSL. The studio declares it above your code (' + (/^u/.test(d.n) ? 'its value comes from the studio' : /^v/.test(d.n) ? 'its value is worked out for every pixel by the studio' : /^g/.test(d.n) ? 'it is read by the studio\'s finish() helper' : 'it is provided by the studio') + ').';
+}
+/** the GLSL the studio wrote for a helper (read back from the real prelude), or null */
+function helperSource(name) {
+  const out = []; let m;
+  const fre = new RegExp('^[A-Za-z]\\w*[ \\t]+' + name + '[ \\t]*\\([^)]*\\)[ \\t]*\\{', 'gm');
+  while ((m = fre.exec(PRELUDE))) { let i = fre.lastIndex, dep = 1; while (i < PRELUDE.length && dep) { const ch = PRELUDE[i++]; if (ch === '{') dep++; else if (ch === '}') dep--; } out.push(PRELUDE.slice(m.index, i)); }
+  if (!out.length) { const vre = new RegExp('^(?:const[ \\t]+)?[A-Za-z]\\w*[ \\t]+' + name + '[ \\t]*=[^;\\n]*;', 'm'); m = vre.exec(PRELUDE); if (m) out.push(m[0]); }
+  return out.length ? out.join('\n\n') : null;
+}
 function buildCompletions(ctx) {
   if (ctx.afterDot) return SWIZ;
   const items = [], A = GL.analyze(ctx.text), seen = new Set();
@@ -3906,7 +4049,7 @@ function buildCompletions(ctx) {
 function getSig(name) {
   const A = GL.analyze(ed.value), f = A.funcs.find(f => f.name === name);
   if (f) return { sig: f.name + '(' + f.params.map(p => p.type + ' ' + p.name).join(', ') + ')', ret: f.ret };
-  const d = DOC_BY[name]; if (d && /\(/.test(d.sig) && (d.kind === 'fn' || d.kind === 'type')) return { sig: d.sig.replace(/\s{2}or\s{2}.*/, ''), ret: d.ret, doc: d.d.split('. ')[0] + '.' };
+  const d = DOC_BY[name]; if (d && /\(/.test(d.sig) && (d.kind === 'fn' || d.kind === 'type')) return { sig: d.sig.replace(/\s{2}or\s{2}.*/, ''), ret: d.ret, doc: (d.studio ? '[studio helper, not GLSL] ' : '') + d.d.split('. ')[0] + '.' };
   return null;
 }
 function getHover(w, off) {
@@ -3915,7 +4058,7 @@ function getHover(w, off) {
   const loc = GL.localsAt(ed.value, off).find(v => v.name === w) || A.globals.find(g => g.name === w);
   if (loc) return '<div class="tip-sig">' + esc(loc.type + ' ' + loc.name) + '</div>';
   const d = DOC_BY[w]; if (!d) return '';
-  return '<div class="tip-sig">' + esc(d.sig) + (d.ret ? ' → ' + esc(d.ret) : '') + '</div><div>' + esc(d.d) + '</div><div class="tip-dim">F1: open this in the Docs tab with an example</div>';
+  return '<div class="tip-sig">' + esc(d.sig) + (d.ret ? ' → ' + esc(d.ret) : '') + '</div>' + (d.studio ? '<div class="tip-studio">' + esc(studioWhy(d)) + '</div>' : '') + '<div>' + esc(d.d) + '</div><div class="tip-dim">F1: open this in the Docs tab with an example</div>';
 }
 
 // ------------------------------------------------------------------ uniforms (declared in the code, tweaked in the Uniforms tab)
@@ -4113,6 +4256,8 @@ function buildHelp() {
   <div class="hint">Open the <b>Learn</b> tab: step-by-step lessons on UV coordinates and vector maths, building shapes and patterns, colour, lighting, bump maps, reflections, and how to work backwards from a picture in your head.</div>
   <h4>Writing a shader</h4>
   <div class="hint">A shader is a small program that runs once for <b>every pixel</b> of the object. It has to define <code>void main()</code> and set <code>gl_FragColor</code> (red, green, blue, alpha). Everything is GLSL ES 3.00, so write <code>1.0</code> not <code>1</code> for decimal numbers. Add <code>finish(colour, 1.0)</code> to get sun lighting for free.</div>
+  <h4>GLSL vs studio-made</h4>
+  <div class="hint">Two kinds of names exist in your code. <b>Real GLSL</b>: types (<code>float</code>, <code>vec3</code>), <code>void main()</code>, maths like <code>mix</code> <code>step</code> <code>sin</code> <code>dot</code> <code>length</code>, and <code>gl_FragCoord</code>. They work in every shader program. <b>Studio-made</b>: helpers and variables this studio writes above your code, such as <code>finish</code>, <code>noise</code>, <code>fbm</code>, <code>palette</code>, <code>vUv</code>, <code>uTime</code>, <code>gShine</code>, <code>gRough</code> and <code>gl_FragColor</code> (modern GLSL has no gl_FragColor: the studio renames it for you). They are tagged <span class="stag">studio-made</span> in the Docs tab, in autocomplete, in hover tips and in lessons, and in the Docs you can open one to read the plain GLSL the studio wrote for it. Outside this studio you would have to copy that code along.</div>
   <h4>The editor</h4>
   <div class="hint"><b>Drag any number sideways</b> to change it (hold <kbd>Shift</kbd> for big steps, <kbd>Alt</kbd> for tiny ones). Numbers get an orange underline when you hover them, and the shader updates while you drag.</div>
   <div class="hint"><b>Autocomplete</b> opens as you type; <kbd>Ctrl</kbd>+<kbd>Space</kbd> opens it by hand. <kbd>↑</kbd> <kbd>↓</kbd> choose, <kbd>Tab</kbd> or <kbd>Enter</kbd> accepts. Inside a call like <code>mix(</code> the argument names appear above the line. Hover a function to read what it does, press <kbd>F1</kbd> on it for the Docs example.</div>
@@ -4174,7 +4319,12 @@ function buildDocs() {
   const chips = h('div'); chips.id = 'docChips'; tools.append(chips);
   const wide = h('button', '', '⇔ Wide'); wide.title = 'Make the side panel wider'; wide.onclick = () => { document.body.classList.toggle('wide-docs'); markDirty(); };
   chips.append(wide);
+  let origin = 0; const ORIGINS = ['Show: everything', 'Show: real GLSL only', 'Show: studio-made only'];
+  const ob = h('button', 'origin', ORIGINS[0]); ob.title = 'Real GLSL works in any shader program. Studio-made things only exist in this studio.';
+  ob.onclick = () => { origin = (origin + 1) % 3; ob.textContent = ORIGINS[origin]; ob.classList.toggle('on', origin > 0); apply(); };
+  chips.append(ob);
   pane.append(tools);
+  pane.append(h('div', 'hint dlegend', 'Entries tagged studio-made are things this studio added for you (like finish, vUv, uTime, noise, fbm, gShine). They are not part of GLSL and will not work in other programs unless you copy their code too. Everything else is real GLSL.'));
   let catSel = null, reordered = false; const cards = [];
   const note = h('div', 'hint dnote'); pane.append(note);
   const scoreOf = (d, words, full) => {   // higher = better; -1 = not a match. Name matches always beat matches inside descriptions.
@@ -4195,7 +4345,7 @@ function buildDocs() {
     chips.classList.toggle('dim', searching && !!catSel);   // a typed search always looks in every category
     const hits = [];
     for (const c of cards) {
-      const d = c._d, sc = searching ? scoreOf(d, words, t) : ((!catSel || d.cat === catSel) ? 0 : -1);
+      const d = c._d, okOrigin = origin === 0 || (origin === 1) === !d.studio, sc = !okOrigin ? -1 : searching ? scoreOf(d, words, t) : ((!catSel || d.cat === catSel) ? 0 : -1);
       c.style.display = sc >= 0 ? '' : 'none'; if (sc >= 0) { shown++; hits.push([sc, c._i, c]); }
     }
     if (searching) { hits.sort((a, b) => b[0] - a[0] || a[1] - b[1]); for (const h2 of hits) pane.append(h2[2]); reordered = true; }   // best match first
@@ -4209,8 +4359,13 @@ function buildDocs() {
   docObserver = makeThumbObserver();
   for (const d of DOCS) {
     const c = h('div', 'doc'); c.id = 'doc-' + d.n; c._d = d;
-    const hd = h('div', 'dh'); hd.append(h('span', 'dn', d.n), h('span', 'dc', d.cat)); c.append(hd);
+    const hd = h('div', 'dh'); hd.append(h('span', 'dn', d.n)); if (d.studio) hd.append(h('span', 'stag', 'studio-made')); hd.append(h('span', 'dc', d.cat)); c.append(hd);
     c.append(h('div', 'ds', d.sig + (d.ret ? '  →  ' + d.ret : '')), h('div', 'dd', d.d));
+    if (d.studio) {
+      c.append(h('div', 'dstudio', studioWhy(d)));
+      const src = helperSource(d.n);
+      if (src) { const dt = h('details', 'dsrc'); dt.append(h('summary', '', 'How the studio wrote it (plain GLSL)')); const pr = h('pre', 'dcode'); pr.innerHTML = GL.highlight(src, GL.lex(src), GL.analyze(src)); dt.append(pr); c.append(dt); }
+    }
     if (d.ex) {
       const b = h('div', 'db'), th = h('div', 'th'), cv = h('canvas'); cv.width = cv.height = 248; th.append(cv); c._cv = cv;
       const pre = h('pre', 'dcode'); pre.innerHTML = GL.highlight(d.ex, GL.lex(d.ex), GL.analyze(d.ex));
@@ -4278,7 +4433,8 @@ function renderLearn() {
       const nb = h('div', 'lnew'); nb.append(h('div', 'lnl', 'New in this step'));
       for (const n of st.new) {
         const it = h('div', 'lni'), dd = typeof n === 'string' ? DOC_BY[n] : null, sig = typeof n === 'string' ? (dd ? dd.sig : n) : n.sig, desc = typeof n === 'string' ? (dd ? dd.d : '') : n.d;
-        const sg = h('code', '', sig); it.append(sg, h('div', 'lnd', desc));
+        const sg = h('code', '', sig); it.append(sg); if (dd && dd.studio) it.append(h('span', 'stag', 'studio-made')); it.append(h('div', 'lnd', desc));
+        if (dd && dd.studio) it.append(h('div', 'lstudio', studioWhy(dd)));
         if (dd) { const a = h('a', 'dl', 'more in Docs →'); a.dataset.doc = n; it.append(a); }
         nb.append(it);
       }
@@ -4388,7 +4544,7 @@ function init() {
     onSave: () => toast('Saved. (Everything is saved automatically in this browser.)'), onRun: () => compileMain(),
   });
   let wasMod = false; window.isModifiedChangedFlag = () => { const m = isModified(S.cur); const ch = m !== wasMod; wasMod = m; return ch; };
-  buildLineHead(); buildShapes(); buildScene(); buildHelp(); renderLib();
+  buildLineHead(); buildShapes(); buildScene(); buildHelp(); exportSetup(); renderLib();
   orbit(view, () => true); orbit(view2, () => S.line.mode === 'shape');
   $('#bName').textContent = S.cur.name; $('#typeSel').value = S.cur.type; wasMod = isModified(S.cur);
   $('#typeSel').onchange = e => { S.cur.type = e.target.value; renderLib(); markDirty(); saveSoon(); };
@@ -4428,6 +4584,13 @@ function init() {
   compileMain(); requestAnimationFrame(tick);
 }
 window.addEventListener('DOMContentLoaded', init);
+function exportSetup() {
+  const fname = ext => (S.cur.name || 'shader').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').toLowerCase() + ext;
+  const code = () => ed.value, mk = kind => Export[kind](code(), S.cur.name, S.uv);
+  $('#xGlsl').onclick = () => { download(fname('.frag'), mk('glsl')); toast('Saved ' + fname('.frag') + ' with the studio helpers it uses'); };
+  $('#xToy').onclick = () => { download(fname('-shadertoy.glsl'), mk('shadertoy')); toast('Saved the ShaderToy version'); };
+  $('#xCopy').onclick = async () => { toast((await copyText(mk('glsl'))) ? 'GLSL copied (with studio helpers)' : 'Could not copy'); };
+}
 window.__studio = { renderLearn, S, get ed() { return ed; }, get pvMain() { return pvMain; }, get pvLine() { return pvLine; }, compileMain, updateLine, openShader, openDoc, showTab, thumbs: () => thumbs };
 
 </script></body></html>
