@@ -147,6 +147,12 @@ a.dl { color: #7db4ff; cursor: pointer; text-decoration: underline dotted; } a.d
 #tabs button#bFocus { flex: none; width: 34px; }
 body.hide-pv #pvwrap, body.hide-pv #shapes, body.hide-pv #lpHead, body.hide-pv #lpWrap { display: none; }
 
+.hsplit { height: 7px; flex: none; cursor: row-resize; background: var(--line); position: relative; } .hsplit::after { content: ""; position: absolute; left: 50%; top: 2px; width: 34px; height: 3px; margin-left: -17px; border-radius: 2px; background: #4a5266; }
+.hsplit:hover, .hsplit.drag { background: var(--accent); } .hsplit:hover::after, .hsplit.drag::after { background: #fff; }
+.split { width: 7px; position: relative; } .split::after { content: ""; position: absolute; top: 50%; left: 2px; width: 3px; height: 34px; margin-top: -17px; border-radius: 2px; background: #4a5266; } .split:hover::after, .split.drag::after { background: #fff; }
+#pvwrap, #lpWrap { min-height: 80px; } #tabbody { min-height: 160px; }
+body.hide-pv .hsplit { display: none; }
+
 </style></head><body>
 <div id="app">
   <div id="top">
@@ -167,9 +173,11 @@ body.hide-pv #pvwrap, body.hide-pv #shapes, body.hide-pv #lpHead, body.hide-pv #
     <div class="split" id="rsplit" title="Drag to resize"></div>
     <div id="right">
       <div id="pvwrap"><canvas class="view" id="view"></canvas><div id="pvmsg"></div></div>
+      <div class="hsplit" data-k="pvH" title="Drag to resize the preview (double-click to reset)"></div>
       <div id="shapes"></div>
       <div id="lpHead"></div>
       <div id="lpWrap"><canvas class="view" id="view2"></canvas><div id="lpmsg"></div></div>
+      <div class="hsplit" data-k="lpH" title="Drag to resize the line preview (double-click to reset)"></div>
       <div id="tabs">
         <button data-tab="shaders">Shaders</button><button data-tab="scene">Scene</button><button data-tab="uniforms">Uniforms</button><button data-tab="learn">Learn</button><button data-tab="docs">Docs</button><button data-tab="help">Help</button><button id="bFocus" title="Hide / show the previews (more room to read)">⇕</button>
       </div>
@@ -3298,7 +3306,7 @@ const S = {
   lib: [], cur: null, deleted: [], prog: null, lineProg: null, lineCode: null, errors: [], uv: {}, uSig: '', caret: { off: 0, line: 1, col: 1 }, time: 0, spin: 0,
   scene: { shape: 'sphere', spin: true, anim: true, speed: 1, tod: 'day', az: 40, el: 50, bg: 0, dist: 3.4, yaw: 0.55, pitch: 0.3, seed: 0.37 },
   line: { on: true, mode: 'shape', viz: 0, lo: 0, hi: 1 },
-  ui: { tab: 'shaders', collapsed: {}, rightW: 470 },
+  ui: { tab: 'shaders', collapsed: {}, rightW: 470, pvH: 280, lpH: 190 },
 };
 let dirty = true, saveT = 0, compT = 0, lineT = 0, ed = null, pvMain = null, pvLine = null, thumbs = null;
 const markDirty = () => { dirty = true; };
@@ -3803,6 +3811,18 @@ function init() {
   // resizable right panel
   const sp = $('#rsplit'); document.documentElement.style.setProperty('--right', S.ui.rightW + 'px');
   sp.onpointerdown = e => { sp.setPointerCapture(e.pointerId); sp.classList.add('drag'); const move = ev => { S.ui.rightW = clamp(innerWidth - ev.clientX, 340, Math.max(400, innerWidth - 380)); document.documentElement.style.setProperty('--right', S.ui.rightW + 'px'); markDirty(); }; const up = () => { sp.classList.remove('drag'); sp.removeEventListener('pointermove', move); sp.removeEventListener('pointerup', up); saveSoon(); }; sp.addEventListener('pointermove', move); sp.addEventListener('pointerup', up); };
+  // vertical splitters: main preview / line preview heights
+  const HK = { pvH: ['#pvwrap', 280], lpH: ['#lpWrap', 190] };
+  const applyH = () => { for (const k in HK) $(HK[k][0]).style.height = clamp(S.ui[k] || HK[k][1], 80, Math.max(200, innerHeight - 160)) + 'px'; markDirty(); };
+  for (const sp2 of document.querySelectorAll('.hsplit')) {
+    const k = sp2.dataset.k;
+    sp2.onpointerdown = e => { sp2.setPointerCapture(e.pointerId); sp2.classList.add('drag'); const y0 = e.clientY, h0 = $(HK[k][0]).getBoundingClientRect().height;
+      const move = ev => { S.ui[k] = Math.round(clamp(h0 + ev.clientY - y0, 80, Math.max(200, innerHeight - 160))); applyH(); };
+      const up = () => { sp2.classList.remove('drag'); sp2.removeEventListener('pointermove', move); sp2.removeEventListener('pointerup', up); saveSoon(); };
+      sp2.addEventListener('pointermove', move); sp2.addEventListener('pointerup', up); };
+    sp2.ondblclick = () => { S.ui[k] = HK[k][1]; applyH(); saveSoon(); };
+  }
+  addEventListener('resize', applyH); applyH();
   new ResizeObserver(markDirty).observe($('#pvwrap')); new ResizeObserver(markDirty).observe($('#lpWrap'));
   addEventListener('beforeunload', persist);
   showTab(S.ui.tab === 'docs' ? 'docs' : S.ui.tab || 'shaders');
