@@ -176,6 +176,26 @@ button.origin.on { border-color: #2f5f94; color: #8fd0ff; }
 #sbar { align-items: center; } #sbar .sbsp { flex: 1; } #sbar .sbx { color: var(--dim); }
 #sbar button { font-size: 11px; padding: 1px 8px; margin: -1px 0; }
 
+.ptop { display: flex; align-items: baseline; gap: 10px; margin: 4px 0; } .pnum { color: var(--dim); font: 12px var(--mono); }
+.prate { font-weight: 700; font-size: 15px; padding: 1px 9px; border-radius: 10px; } .prate.r0, .pbig.r0 { color: #6fdc8c; } .prate.r1, .pbig.r1 { color: #c9dd6a; } .prate.r2, .pbig.r2 { color: #f0b36b; } .prate.r3, .pbig.r3 { color: #ff7d7d; }
+.prate { background: rgba(255,255,255,.06); }
+.pbar { position: relative; height: 8px; background: #1b1f27; border-radius: 4px; margin: 6px 0 8px; } .pbar i { display: block; height: 100%; border-radius: 4px; background: #6fdc8c; } .pbar i.r1 { background: #c9dd6a; } .pbar i.r2 { background: #f0b36b; } .pbar i.r3 { background: #ff7d7d; }
+.pbar b { position: absolute; top: -2px; width: 1px; height: 12px; background: #556; }
+.pmeasure { display: flex; gap: 8px; align-items: center; margin: 8px 0 4px; color: var(--dim); font-size: 12px; }
+.pres { margin: 4px 0 8px; padding: 8px 10px; border: 1px solid #2c313b; border-radius: 7px; background: #12151b; min-height: 20px; font-size: 12px; } .pres.busy { color: var(--dim); }
+.pbig { font: 700 18px var(--mono); } .pline2 { color: #b9c1d1; margin-top: 3px; line-height: 1.45; }
+.ptable, .plines { display: flex; flex-direction: column; gap: 3px; margin: 4px 0; }
+.prow { display: grid; grid-template-columns: minmax(110px, 1.3fr) 44px 1fr 36px; gap: 8px; align-items: center; font-size: 12px; }
+.prow .pn { font-family: var(--mono); color: #cfe0ff; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .prow .pn:hover { text-decoration: underline; }
+.prow .px, .ps { color: var(--dim); font-family: var(--mono); font-size: 11px; text-align: right; } .pb { background: #1b1f27; height: 7px; border-radius: 4px; overflow: hidden; } .pb i { display: block; height: 100%; background: #4a8fe0; }
+.ptag { display: inline-block; font: 600 9.5px/1 var(--mono); text-transform: uppercase; color: #9fe3b0; background: #163a25; border: 1px solid #2f7a4d; border-radius: 4px; padding: 2px 5px; margin-left: 6px; vertical-align: middle; }
+.pline { display: grid; grid-template-columns: 52px 1fr 36px; gap: 8px; font-size: 12px; cursor: pointer; padding: 2px 4px; border-radius: 4px; } .pline:hover { background: #1c2230; } .pline .pl { color: var(--dim); font-family: var(--mono); font-size: 11px; } .pline .pt { font-family: var(--mono); color: #d7dde9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pfacts { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 6px; margin: 4px 0; } .pfact { background: #12151b; border: 1px solid #2c313b; border-radius: 7px; padding: 6px 8px; } .pfact b { display: block; font: 700 16px var(--mono); color: #e9d9a6; } .pfact span { color: var(--dim); font-size: 11px; }
+.psug { border-left: 3px solid #556; background: #12151b; border-radius: 0 7px 7px 0; padding: 6px 9px; margin: 6px 0; font-size: 12px; line-height: 1.45; } .psug.high { border-color: #ff7d7d; } .psug.med { border-color: #f0b36b; } .psug.low { border-color: #6fa8e0; } .psug.ok { border-color: #6fdc8c; color: #b8d8c0; }
+.psug .sgt { font-weight: 600; color: #e6e9f0; margin-bottom: 2px; } .psug .sgx { color: #b9c1d1; } .psug a { cursor: pointer; display: inline-block; margin-top: 3px; }
+
+.psug button.pfix { display: block; margin-top: 5px; }
+
 </style></head><body>
 <div id="app">
   <div id="top">
@@ -202,7 +222,7 @@ button.origin.on { border-color: #2f5f94; color: #8fd0ff; }
       <div id="lpWrap"><canvas class="view" id="view2"></canvas><div id="lpmsg"></div></div>
       <div class="hsplit" data-k="lpH" title="Drag to resize the line preview (double-click to reset)"></div>
       <div id="tabs">
-        <button data-tab="shaders">Shaders</button><button data-tab="scene">Scene</button><button data-tab="uniforms">Uniforms</button><button data-tab="learn">Learn</button><button data-tab="docs">Docs</button><button data-tab="help">Help</button><button id="bFocus" title="Hide / show the previews (more room to read)">⇕</button>
+        <button data-tab="shaders">Shaders</button><button data-tab="scene">Scene</button><button data-tab="uniforms">Uniforms</button><button data-tab="learn">Learn</button><button data-tab="perf">Perf</button><button data-tab="docs">Docs</button><button data-tab="help">Help</button><button id="bFocus" title="Hide / show the previews (more room to read)">⇕</button>
       </div>
       <div id="tabbody">
         <div class="pane" id="tab-shaders">
@@ -214,6 +234,7 @@ button.origin.on { border-color: #2f5f94; color: #8fd0ff; }
         <div class="pane" id="tab-scene"></div>
         <div class="pane" id="tab-uniforms"></div>
         <div class="pane" id="tab-learn"></div>
+        <div class="pane" id="tab-perf"></div>
         <div class="pane" id="tab-docs"></div>
         <div class="pane" id="tab-help"></div>
       </div>
@@ -508,6 +529,7 @@ uniform vec3 uAmbSky;
 uniform vec3 uAmbGround;
 uniform sampler2D uTex0;
 uniform sampler2D uNoiseTex;
+uniform sampler2D uBake;
 #define vP (vUv * 4.0)
 #define vP3 vPos
 `;
@@ -563,6 +585,31 @@ vec3 voronoi(vec2 p) {
   }
   return vec3(d1, d2 - d1, id);
 }
+// ---- fast versions: read the random-number picture (uNoiseTex) instead of calculating hashes ----
+vec4 hashT(vec2 p) { return texelFetch(uNoiseTex, ivec2(floor(p)) & ivec2(255), 0); }
+float noiseT(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return texture(uNoiseTex, (i + f + 0.5) * (1.0 / 256.0)).r; }
+float noise3T(vec3 p) {
+  vec3 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  vec2 t = texture(uNoiseTex, (i.xy + vec2(37.0, 17.0) * i.z + f.xy + 0.5) * (1.0 / 256.0)).rg;
+  return mix(t.x, t.y, f.z);
+}
+float fbmT(vec2 p) { float s = 0.0, a = 0.5; for (int i = 0; i < 5; i++) { s += a * noiseT(p); p = p * 2.03 + vec2(17.1, 9.2); a *= 0.5; } return s / 0.96875; }
+float fbm3T(vec3 p) { float s = 0.0, a = 0.5; for (int i = 0; i < 5; i++) { s += a * noise3T(p); p = p * 2.03 + vec3(17.1, 9.2, 5.3); a *= 0.5; } return s / 0.96875; }
+vec3 voronoiT(vec2 p) {
+  vec2 i = floor(p), f = fract(p); float d1 = 8.0, d2 = 8.0, id = 0.0;
+  for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+    vec2 g = vec2(float(x), float(y)); vec4 h = hashT(i + g); float d = length(g + h.xy - f);
+    if (d < d1) { d2 = d1; d1 = d; id = h.z; } else if (d < d2) d2 = d;
+  }
+  return vec3(d1, d2 - d1, id);
+}
+// ---- tileable noise: repeats exactly every "period" cells, so a baked picture can scroll forever ----
+float noiseTile(vec2 p, float period) {
+  vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  vec2 a = mod(i, period), b = mod(i + 1.0, period);
+  return mix(mix(hash21(a), hash21(vec2(b.x, a.y)), f.x), mix(hash21(vec2(a.x, b.y)), hash21(b), f.x), f.y);
+}
+float fbmTile(vec2 p, float period) { float s = 0.0, a = 0.5; for (int i = 0; i < 5; i++) { s += a * noiseTile(p, period); p *= 2.0; period *= 2.0; a *= 0.5; } return s / 0.96875; }
 vec3 palette(float t, vec3 a, vec3 b, vec3 c, vec3 d) { return a + b * cos(6.28318 * (c * t + d)); }
 vec3 hsv2rgb(vec3 c) { vec3 p = abs(fract(c.xxx + vec3(1.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0); return c.z * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), c.y); }
 vec3 rgb2hsv(vec3 c) {
@@ -815,10 +862,10 @@ const TOD = {
   night: { col: [0.34, 0.42, 0.68], sky: [0.12, 0.15, 0.26], gnd: [0.07, 0.07, 0.1] },
   overcast: { col: [0.6, 0.6, 0.62], sky: [0.6, 0.64, 0.7], gnd: [0.35, 0.35, 0.36] },
 };
-const MANAGED = new Set(['modelMatrix', 'modelViewMatrix', 'projectionMatrix', 'normalMatrix', 'cameraPosition', 'uTime', 'uSeed', 'uResolution', 'uLightDir', 'uLightCol', 'uAmbSky', 'uAmbGround', 'uTex0', 'uNoiseTex', 'uVizMode', 'uVizRange']);
+const MANAGED = new Set(['modelMatrix', 'modelViewMatrix', 'projectionMatrix', 'normalMatrix', 'cameraPosition', 'uTime', 'uSeed', 'uResolution', 'uLightDir', 'uLightCol', 'uAmbSky', 'uAmbGround', 'uTex0', 'uNoiseTex', 'uBake', 'uVizMode', 'uVizRange']);
 
 // ------------------------------------------------------------------ renderer
-const BUILTIN_UNI = { uTime: 'float', uSeed: 'float', uResolution: 'vec2', uLightDir: 'vec3', uLightCol: 'vec3', uAmbSky: 'vec3', uAmbGround: 'vec3', cameraPosition: 'vec3', uTex0: 'sampler2D', uNoiseTex: 'sampler2D' };
+const BUILTIN_UNI = { uTime: 'float', uSeed: 'float', uResolution: 'vec2', uLightDir: 'vec3', uLightCol: 'vec3', uAmbSky: 'vec3', uAmbGround: 'vec3', cameraPosition: 'vec3', uTex0: 'sampler2D', uNoiseTex: 'sampler2D', uBake: 'sampler2D' };
 /** The studio already declares uTime, uSeed...; if the user declares them again the compiler complains ("redefinition"). Comment such lines out, keeping the line count. */
 function stripBuiltinUniforms(code) {
   return code.replace(/^([ \t]*)uniform\s+(?:highp\s+|mediump\s+|lowp\s+)?(\w+)\s+(\w+)\s*;/gm, (m, ind, type, name) => (BUILTIN_UNI[name] === type ? ind + '// (built in) ' + type + ' ' + name + ';' : m));
@@ -840,6 +887,7 @@ class GLView {
     x.strokeStyle = '#fff'; x.lineWidth = 6; x.strokeRect(3, 3, 250, 250);
     this.tex0 = this.makeTex(c, true);
     const nz = new Uint8Array(256 * 256 * 4); let seed = 12345; for (let i = 0; i < nz.length; i++) { seed = (seed * 1664525 + 1013904223) >>> 0; nz[i] = seed >>> 24; }
+    for (let y = 0; y < 256; y++) for (let x = 0; x < 256; x++) nz[(y * 256 + x) * 4 + 1] = nz[(((y + 17) & 255) * 256 + ((x + 37) & 255)) * 4];   // g(x,y) = r(x+37,y+17): lets noise3T read two layers at once
     this.tex1 = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, this.tex1);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 256, 256, 0, gl.RGBA, gl.UNSIGNED_BYTE, nz);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
@@ -872,16 +920,61 @@ class GLView {
       }
       return { ok: false, errors: errors.length ? errors : [{ line: 0, msg: f.log }] };
     }
-    const prog = gl.createProgram(); gl.attachShader(prog, this.vs); gl.attachShader(prog, f.s);
+    const L = this.link(f.s); gl.deleteShader(f.s);
+    if (L.error) return { ok: false, errors: [{ line: 0, msg: L.error }] };
+    const out = { ok: true, errors: [], prog: L.prog };
+    // a function "vec4 bake(vec2 uv)" is drawn ONCE into a picture (uBake) instead of every frame
+    if (/(^|\n)[ \t]*vec4[ \t]+bake[ \t]*\([ \t]*vec2[ \t]+\w+[ \t]*\)[ \t]*\{/.test(code)) {
+      const sz = /\/\/[ \t]*bake[ \t]+(\d+)/.exec(code), size = Math.max(64, Math.min(2048, sz ? +sz[1] : 512));
+      const bsrc = code.replace(/\bvoid\s+main\s*\(\s*(?:void)?\s*\)/, 'void studioMainNoBake()') + '\nvoid main() { gl_FragColor = bake(vUv); }\n';
+      const bf = this.compile(gl.FRAGMENT_SHADER, pre + bsrc);
+      if (bf.log) { this.free(L.prog); return { ok: false, errors: this.mapLog(bf.log, off) }; }
+      const BL = this.link(bf.s); gl.deleteShader(bf.s);
+      if (BL.error) { this.free(L.prog); return { ok: false, errors: [{ line: 0, msg: BL.error }] }; }
+      out.prog.bake = { prog: BL.prog, size, tex: null, fbo: null, key: null };
+    }
+    return out;
+  }
+  link(fs) {
+    const gl = this.gl, prog = gl.createProgram(); gl.attachShader(prog, this.vs); gl.attachShader(prog, fs);
     gl.bindAttribLocation(prog, 0, 'position'); gl.bindAttribLocation(prog, 1, 'normal'); gl.bindAttribLocation(prog, 2, 'uv');
     gl.linkProgram(prog);
-    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) return { ok: false, errors: [{ line: 0, msg: 'link: ' + gl.getProgramInfoLog(prog) }] };
-    gl.deleteShader(f.s);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) { const e = 'link: ' + gl.getProgramInfoLog(prog); gl.deleteProgram(prog); return { error: e }; }
     const uniforms = {}, n = gl.getProgramParameter(prog, gl.ACTIVE_UNIFORMS), list = [];
     for (let i = 0; i < n; i++) { const info = gl.getActiveUniform(prog, i); const name = info.name.replace(/\[0\]$/, ''); const u = { name, type: info.type, size: info.size, loc: gl.getUniformLocation(prog, info.name) }; uniforms[name] = u; list.push(u); }
-    return { ok: true, errors: [], prog: { p: prog, uniforms, list } };
+    return { prog: { p: prog, uniforms, list } };
   }
-  free(prog) { if (prog && this.gl) this.gl.deleteProgram(prog.p); }
+  mapLog(log, off) {
+    const errors = [], seen = new Set();
+    for (const l of log.split('\n')) {
+      const m = /(?:ERROR|WARNING):\s*\d+:(\d+):\s*(.*)/.exec(l);
+      if (m) { const ln = +m[1] - off, msg = m[2].replace(/^'\s*'\s*:\s*/, ''); const key = ln + msg; if (seen.has(key)) continue; seen.add(key); errors.push({ line: Math.max(0, ln), msg: ln >= 1 ? msg : '(inside the built-in helper code, line ' + m[1] + ') ' + msg }); }
+    }
+    return errors.length ? errors : [{ line: 0, msg: log }];
+  }
+  /** (re)draw the bake() picture when its inputs changed: it is NOT redrawn every frame */
+  ensureBake(o) {
+    const gl = this.gl, B = o.prog.bake, key = JSON.stringify([o.seed, o.uvals]);
+    if (B.tex && B.key === key) return;
+    if (!B.tex) {
+      const S = B.size, tex = gl.createTexture(), fbo = gl.createFramebuffer();
+      const make = (ifmt, fmt, type) => { gl.bindTexture(gl.TEXTURE_2D, tex); gl.texImage2D(gl.TEXTURE_2D, 0, ifmt, S, S, 0, fmt, type, null); gl.bindFramebuffer(gl.FRAMEBUFFER, fbo); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0); return gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE; };
+      B.float = !!gl.getExtension('EXT_color_buffer_float') && make(gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT);
+      if (!B.float) make(gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      B.tex = tex; B.fbo = fbo;
+    }
+    this.draw({ prog: B.prog, mode: 'flat', stretch: true, fbo: B.fbo, fw: B.size, fh: B.size, time: 0, seed: o.seed, uvals: o.uvals, bg: 0, noBake: true });
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.bindTexture(gl.TEXTURE_2D, B.tex); gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+    B.key = key;
+  }
+  free(prog) {
+    if (!prog || !this.gl) return; const gl = this.gl; gl.deleteProgram(prog.p);
+    const B = prog.bake; if (B) { gl.deleteProgram(B.prog.p); if (B.tex) gl.deleteTexture(B.tex); if (B.fbo) gl.deleteFramebuffer(B.fbo); }
+  }
   mesh(name) {
     if (this.meshes[name]) return this.meshes[name];
     const gl = this.gl, G = SHAPES[name].make(), vao = gl.createVertexArray(); gl.bindVertexArray(vao);
@@ -902,12 +995,12 @@ class GLView {
   /** o: { prog, mode:'shape'|'flat', shape, time, seed, yaw, pitch, dist, spin, bg, tod, az, el, transparent, uvals, viz:{mode,lo,hi}|null, w,h (override size) } */
   draw(o) {
     const gl = this.gl, c = this.canvas; if (!this.ok) return;
-    const dpr = this.fixedSize ? 1 : this.resize(), W = c.width, H = c.height;
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    if (o.prog && o.prog.bake && !o.noBake) this.ensureBake(o);
+    const toFbo = !!o.fbo, dpr = toFbo || this.fixedSize ? 1 : this.resize(), W = toFbo ? o.fw : c.width, H = toFbo ? o.fh : c.height;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, o.fbo || null);
     gl.viewport(0, 0, W, H); gl.disable(gl.SCISSOR_TEST); gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE); gl.depthMask(true);
-    gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-    gl.useProgram(this.bg.p); gl.uniform2f(this.bg.res, W, H); gl.uniform1i(this.bg.mode, o.bg | 0); gl.uniform1f(this.bg.dpr, dpr);
-    gl.bindVertexArray(this.vao0); gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.clearColor(0, 0, 0, toFbo ? 0 : 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    if (!toFbo) { gl.useProgram(this.bg.p); gl.uniform2f(this.bg.res, W, H); gl.uniform1i(this.bg.mode, o.bg | 0); gl.uniform1f(this.bg.dpr, dpr); gl.bindVertexArray(this.vao0); gl.drawArrays(gl.TRIANGLES, 0, 3); }
     if (!o.prog) return;
     const flat = o.mode === 'flat';
     let vx = 0, vy = 0, vw = W, vh = H;
@@ -922,7 +1015,7 @@ class GLView {
     }
     const mv = M4.mul(view, model);
     gl.enable(gl.DEPTH_TEST); gl.clear(gl.DEPTH_BUFFER_BIT);
-    if (o.transparent || flat) { gl.enable(gl.BLEND); gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA); }
+    if ((o.transparent || flat) && !toFbo) { gl.enable(gl.BLEND); gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA); }
     if (o.transparent) gl.depthMask(false);
     const P = o.prog; gl.useProgram(P.p);
     const tod = TOD[o.tod] || TOD.day, az = (o.az || 0) * Math.PI / 180, el = (o.el == null ? 45 : o.el) * Math.PI / 180;
@@ -935,6 +1028,7 @@ class GLView {
     for (const name in P.uniforms) {
       const u = P.uniforms[name]; if (!u.loc) continue;
       if (name === 'uTex0') { gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.tex0); gl.uniform1i(u.loc, 0); continue; }
+      if (name === 'uBake') { gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, (P.bake && P.bake.tex) || this.tex0); gl.uniform1i(u.loc, 2); continue; }
       if (name === 'uNoiseTex') { gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, this.tex1); gl.uniform1i(u.loc, 1); continue; }
       let v = MANAGED.has(name) ? vals[name] : (o.uvals ? o.uvals[name] : undefined);
       if (v === undefined || v === null) continue;
@@ -1010,6 +1104,7 @@ const Export = (() => {
     L.push('// Plain GLSL ES 3.00 fragment shader. Real GLSL = everything the language gives you (float, vec3, mix, sin, ...).');
     L.push('// The section "STUDIO HELPERS" is code this studio wrote (' + (usedHelpers.length ? usedHelpers.join(', ') : 'none used') + '); it is included so the file is self-contained.');
     if (ins.length || unis.length) L.push('// Your program must supply: ' + [ins.length ? 'varyings ' + ins.join(' ').replace(/;/g, ',').replace(/,\s*$/, '') : '', unis.length ? 'uniforms ' + unis.join(' ').replace(/;/g, ',').replace(/,\s*$/, '') : ''].filter(Boolean).join(' | '));
+    if (/\bvec4\s+bake\s*\(/.test(a.user)) L.push('// bake(): the studio draws it ONCE into a picture. Do the same: render a full-screen quad with a copy of this file whose main() is "fragColor = bake(vUv);" into a texture (RGBA16F, size set by the "// bake N" comment), bind it as uBake, then draw this shader every frame.');
     L.push('precision highp float;', 'precision highp int;', 'precision highp sampler2D;', 'out highp vec4 fragColor;', '');
     const defs = a.decls.filter(d => d.kind === 'define'), ds = a.decls.filter(d => d.kind !== 'define');
     // the studio's own #defines come first (gl_FragColor, texture2D, vP...) but their inputs come before them
@@ -1027,6 +1122,7 @@ const Export = (() => {
     const n = a.need, uses = x => n.has(x);
     L.push('// Exported from Shader Studio: ' + (name || 'shader') + ' (ShaderToy version)');
     L.push('// Paste into a new ShaderToy shader. "STUDIO HELPERS" is code the studio wrote, not GLSL. Stand-ins below replace the studio inputs.');
+    if (/\bvec4\s+bake\s*\(/.test(a.user)) L.push('// NOTE: bake() is not converted for ShaderToy (it needs a separate Buffer pass for uBake).');
     if (['vPos', 'vP3', 'vN', 'vW', 'vWN', 'cameraPosition', 'uLightDir'].some(uses)) L.push('// NOTE: this shader uses 3D inputs; ShaderToy has no 3D object, so a flat surface facing the camera is faked.');
     L.push('vec4 fragColor;', '#define gl_FragColor fragColor', '#define texture2D texture');
     L.push('vec2 vUv; vec3 vPos, vN, vW, vWN;', '#define vP3 vPos', '#define vP (vUv * 4.0)', '#define uTime iTime', '#define uResolution iResolution.xy', '#define uTex0 iChannel0', '#define uNoiseTex iChannel1');
@@ -1039,9 +1135,241 @@ const Export = (() => {
   return { glsl, shadertoy, analyze };
 })();
 
+/* ===== perf.js : estimated cost of a shader (static analysis) + real GPU timing ===== */
+const Perf = (() => {
+  // rough cost of each built-in, in "units" (one add or multiply = 1). Only the relative size matters.
+  const BC = {
+    sin: 8, cos: 8, tan: 10, asin: 10, acos: 10, atan: 10, sinh: 10, cosh: 10, tanh: 10, asinh: 10, acosh: 10, atanh: 10,
+    pow: 12, exp: 8, exp2: 6, log: 8, log2: 6, sqrt: 4, inversesqrt: 3,
+    length: 5, distance: 6, normalize: 7, dot: 2, cross: 3, reflect: 5, refract: 10, faceforward: 3,
+    mix: 3, smoothstep: 6, step: 1, clamp: 2, min: 1, max: 1, abs: 1, sign: 1, floor: 1, ceil: 1, round: 1, trunc: 1, fract: 2, mod: 4,
+    radians: 1, degrees: 1, determinant: 6, inverse: 20, transpose: 2, matrixCompMult: 2, outerProduct: 3,
+    texture: 20, texture2D: 20, textureLod: 20, texelFetch: 15, textureGrad: 24, textureSize: 2,
+    dFdx: 4, dFdy: 4, fwidth: 6,
+    lessThan: 1, lessThanEqual: 1, greaterThan: 1, greaterThanEqual: 1, equal: 1, notEqual: 1, any: 1, all: 1, not: 1,
+    isnan: 1, isinf: 1, floatBitsToInt: 1, intBitsToFloat: 1,
+  };
+  const OPC = { '/': 3, '%': 3, '/=': 3, '*': 1, '+': 1, '-': 1, '*=': 1, '+=': 1, '-=': 1, '<': 1, '>': 1, '<=': 1, '>=': 1, '==': 1, '!=': 1, '&&': 1, '||': 1, '?': 1 };
+  const HEAVY = new Set('sin cos tan asin acos atan sinh cosh tanh pow exp exp2 log log2 sqrt inversesqrt'.split(' '));
+  const TEX = new Set(['texture', 'texture2D', 'textureLod', 'texelFetch', 'textureGrad']);
+  const CONTROL = new Set(['if', 'for', 'while', 'switch', 'return', 'else', 'do']);
+  const isOp = (t, v) => t && t.t === 'op' && t.v === v;
+  const close = (tk, i, o, c) => { let d = 0; for (let k = i; k < tk.length; k++) { if (isOp(tk[k], o)) d++; else if (isOp(tk[k], c)) { d--; if (d === 0) return k; } } return -1; };
+
+  /** split source into its top-level functions: [{ name, tokens, kind, src, lineAt }] */
+  function segment(src, kind) {
+    const starts = [0]; for (let i = 0; i < src.length; i++) if (src.charCodeAt(i) === 10) starts.push(i + 1);
+    const lineAt = off => { let lo = 0, hi = starts.length - 1; while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (starts[mid] <= off) lo = mid; else hi = mid - 1; } return lo + 1; };
+    const tk = GL.lex(src).filter(t => t.t === 'id' || t.t === 'op' || t.t === 'n'), fns = [];
+    for (let i = 1; i < tk.length; i++) {
+      const t = tk[i];
+      if (t.t === 'id' && isOp(tk[i + 1], '(') && tk[i - 1].t === 'id') {
+        const j = close(tk, i + 1, '(', ')');
+        if (j > 0 && isOp(tk[j + 1], '{')) { const k = close(tk, j + 1, '{', '}'); if (k > 0) { fns.push({ name: t.v, tokens: tk.slice(j + 2, k), kind, src, lineAt }); i = k; } }
+      }
+    }
+    return fns;
+  }
+
+  /** find the for/while loops in a token list: how many times each repeats (guessed when it is not a plain counting loop) */
+  function findLoops(fn) {
+    const tk = fn.tokens, loops = [], mult = new Array(tk.length).fill(1);
+    for (let k = 0; k < tk.length; k++) {
+      const t = tk[k]; if (t.t !== 'id' || (t.v !== 'for' && t.v !== 'while') || !isOp(tk[k + 1], '(')) continue;
+      const p1 = close(tk, k + 1, '(', ')'); if (p1 < 0) continue;
+      let end;
+      if (isOp(tk[p1 + 1], '{')) end = close(tk, p1 + 1, '{', '}');
+      else { end = p1 + 1; let d = 0; for (; end < tk.length; end++) { if (isOp(tk[end], '(') || isOp(tk[end], '{')) d++; else if (isOp(tk[end], ')') || isOp(tk[end], '}')) d--; else if (isOp(tk[end], ';') && d <= 0) break; } }
+      if (end < 0) end = tk.length - 1;
+      let iters = 8, known = false;
+      if (t.v === 'for') {
+        const parts = [[]]; for (const x of tk.slice(k + 2, p1)) { if (isOp(x, ';')) parts.push([]); else parts[parts.length - 1].push(x); }
+        if (parts.length === 3) {
+          const eq = parts[0].findIndex(x => isOp(x, '=')), A = eq >= 0 && parts[0][eq + 1] && parts[0][eq + 1].t === 'n' ? parseFloat(parts[0][eq + 1].v) : NaN;
+          const c = parts[1], B = c.length >= 3 && c[2].t === 'n' ? parseFloat(c[2].v) : NaN, cop = c[1] && c[1].v;
+          const st = parts[2].map(x => x.v).join('');
+          let step = /\+\+/.test(st) ? 1 : /--/.test(st) ? -1 : NaN; const m = /[+-]=(\d+\.?\d*)/.exec(st); if (m) step = (/-=/.test(st) ? -1 : 1) * parseFloat(m[1]);
+          if (isFinite(A) && isFinite(B) && isFinite(step) && step !== 0) {
+            let n = NaN;
+            if (step > 0 && (cop === '<' || cop === '<=')) n = Math.ceil((B - A + (cop === '<=' ? 1e-9 : 0)) / step) + (cop === '<=' && Number.isInteger((B - A) / step) ? 1 : 0);
+            else if (step < 0 && (cop === '>' || cop === '>=')) n = Math.ceil((A - B + (cop === '>=' ? 1e-9 : 0)) / -step) + (cop === '>=' && Number.isInteger((A - B) / -step) ? 1 : 0);
+            if (isFinite(n) && n >= 0) { iters = Math.max(1, n); known = true; }
+          }
+        }
+      }
+      for (let q = k; q <= end; q++) mult[q] *= iters;
+      loops.push({ line: fn.lineAt(t.s), iters, known, k, end, kind: t.v });
+    }
+    return { loops, mult };
+  }
+
+  /** cost of one function (everything it calls included) */
+  function costOf(fn, table, memo) {
+    if (memo.has(fn)) return memo.get(fn);
+    const res = { cost: 0, counts: {}, lines: new Map(), calls: new Map(), loops: [], tokCost: [] };
+    memo.set(fn, res);                     // guards against recursion
+    const tk = fn.tokens, { loops, mult } = findLoops(fn); res.loops = loops;
+    for (let i = 0; i < tk.length; i++) {
+      const t = tk[i], m = mult[i]; let c = 0;
+      if (t.t === 'id' && isOp(tk[i + 1], '(') && !CONTROL.has(t.v)) {
+        const name = t.v; let sub = null, tracked = false;
+        if (BC[name] !== undefined) { c = BC[name]; tracked = true; }
+        else if (table[name] && table[name] !== fn) { sub = costOf(table[name], table, memo); c = sub.cost; tracked = true; }
+        else if (GL.TYPES.has(name)) c = 0; else c = 1;
+        res.counts[name] = (res.counts[name] || 0) + m;
+        if (sub) for (const n in sub.counts) res.counts[n] = (res.counts[n] || 0) + sub.counts[n] * m;
+        if (tracked) { const e = res.calls.get(name) || { n: 0, cost: 0 }; e.n += m; e.cost += c * m; res.calls.set(name, e); }
+      } else if (t.t === 'op' && OPC[t.v]) c = OPC[t.v];
+      res.tokCost[i] = c * m;
+      if (c) { res.cost += c * m; const ln = fn.lineAt(t.s); res.lines.set(ln, (res.lines.get(ln) || 0) + c * m); }
+    }
+    return res;
+  }
+
+  const splitArgs = (tk, open, closeI) => { const out = [[]]; let d = 0; for (let i = open + 1; i < closeI; i++) { const x = tk[i]; if (isOp(x, '(') || isOp(x, '[')) d++; else if (isOp(x, ')') || isOp(x, ']')) d--; if (d === 0 && isOp(x, ',')) out.push([]); else out[out.length - 1].push(x); } return out; };
+
+  const HELPER_TIPS = {
+    fbm: 'fbm() adds up 5 layers of noise, so every call costs about 5 noise() calls. If you only need soft blobs, one noise() is about 5 times cheaper. If you use several fbm() results, check you really need each one.',
+    fbm3: 'fbm3() adds up 5 layers of 3D noise (each layer is 8 hashes). Use noise3() alone, or fewer calls, if the fine detail is not visible.',
+    pfbm: 'pfbm() layers several perlin() calls, each of them 8 gradient lookups. Use fewer layers or a single perlin() where you can.',
+    voronoi: 'voronoi() checks 9 neighbouring cells with a hash each. Reuse its result for colour and edges instead of calling it twice.',
+    perlin: 'perlin() does 8 gradient lookups. One call is fine, several nested ones add up quickly.',
+    noise: 'noise() blends 4 hashes. It is cheap alone, so look at how many times it is called (see "What the GPU does").',
+    noise3: 'noise3() blends 8 hashes. Cheap alone, expensive inside loops.',
+    finish: 'finish() does the full lighting (sun, sky light, optional highlight and rim). Skip it for parts that glow or where lighting is not visible.',
+    bumpFromHeight: 'bumpFromHeight() itself is cheap, but the height value you give it is evaluated for every pixel too. A cheaper height function makes this cheaper.',
+  };
+
+  /** the whole analysis. Returns null when there is no main(). */
+  function analyze(code, quick) {
+    const ex = Export.analyze(code), table = {}, memo = new Map();
+    for (const c of ex.fns) for (const f of segment(c.text, 'studio')) if (!table[f.name]) table[f.name] = f;
+    const userFns = segment(ex.user, 'user'); for (const f of userFns) table[f.name] = f;
+    const main = userFns.find(f => f.name === 'main'); if (!main) return null;
+    const M = costOf(main, table, memo), total = M.cost || 1, codeLines = code.split('\n');
+    // lines of the user's own code: each function's lines are scaled by how often main() reaches it
+    const lines = [];
+    for (const f of userFns) {
+      const r = costOf(f, table, memo), inv = f === main ? 1 : (M.counts[f.name] || 0); if (!inv) continue;
+      for (const [ln, c] of r.lines) if (c * inv > 0) lines.push({ line: ln, cost: c * inv, share: c * inv / total, text: (codeLines[ln - 1] || '').trim() });
+    }
+    lines.sort((a, b) => b.cost - a.cost);
+    const calls = [...M.calls].map(([name, e]) => ({ name, n: e.n, cost: e.cost, share: e.cost / total, kind: table[name] ? table[name].kind : 'glsl' })).sort((a, b) => b.cost - a.cost);
+    const out = { total: M.cost, counts: M.counts, lines, calls, userFns, table, memo, main, uniforms: [], suggestions: [] };
+    if (!quick) out.suggestions = suggest(out, code);
+    return out;
+  }
+
+  function suggest(an, code) {
+    const S = [], { table, memo, total, counts } = an, uni = new Set(); let m;
+    const ure = /^[ \t]*uniform\s+\w+\s+(\w+)/gm; while ((m = ure.exec(code))) uni.add(m[1]);
+    const add = (sev, title, text, line, save, fix) => S.push({ sev, title, text, line: line || 0, save: save || 0, fix });
+    const callCost = n => BC[n] !== undefined ? BC[n] : table[n] ? costOf(table[n], table, memo).cost : 0;
+    for (const fn of an.userFns) {
+      const tk = fn.tokens, { loops, mult } = findLoops(fn), seen = new Map();
+      for (let i = 0; i < tk.length; i++) {
+        const t = tk[i]; if (t.t !== 'id' || !isOp(tk[i + 1], '(') || CONTROL.has(t.v) || GL.TYPES.has(t.v)) continue;
+        const cl = close(tk, i + 1, '(', ')'); if (cl < 0) continue;
+        const text = fn.src.slice(t.s, tk[cl].e).replace(/\s+/g, ''), c = callCost(t.v), line = fn.lineAt(t.s);
+        if (c >= 8) { const e = seen.get(text) || { n: 0, lines: [], c, name: t.v, text: fn.src.slice(t.s, tk[cl].e).replace(/\s+/g, ' '), mult: mult[i] }; e.n++; e.lines.push(line); seen.set(text, e); }
+        if (t.v === 'pow') {
+          const a = splitArgs(tk, i + 1, cl);
+          if (a.length === 2 && a[1].length === 1 && a[1][0].t === 'n') {
+            const e = parseFloat(a[1][0].v);
+            if (e === 2 || e === 3 || e === 4) add('med', 'pow() with a small whole exponent', 'pow(x, ' + a[1][0].v + ') is a slow general-purpose function. Write it as multiplication instead: ' + (e === 2 ? 'x * x' : e === 3 ? 'x * x * x' : 'float x2 = x * x; x2 * x2') + ' (put the base in a variable first if it is a long expression).', line, (12 - e) * mult[i]);
+            else if (e === 0.5) add('low', 'pow(x, 0.5)', 'That is the same as sqrt(x), which is cheaper.', line, 8 * mult[i]);
+          }
+        }
+        if (HEAVY.has(t.v)) {   // the same value for every pixel?
+          const ids = tk.slice(i + 2, cl).filter(x => x.t === 'id');
+          const ok = tk.slice(i + 2, cl).every(x => x.t !== 'id' || x.v === 'uTime' || x.v === 'uSeed' || x.v === 'PI' || x.v === 'TAU' || uni.has(x.v) || HEAVY.has(x.v) || x.v === 'float');
+          if (ok && ids.some(x => x.v === 'uTime' || x.v === 'uSeed' || uni.has(x.v))) add('low', t.v + '() of something that is the same for every pixel', t.v + '(' + fn.src.slice(tk[i + 2].s, tk[cl - 1].e).replace(/\s+/g, ' ') + ') only uses time or uniforms, so every pixel computes the same number. In your own engine, work it out once per frame on the CPU and pass it in as a uniform. (Many graphics drivers do this for you, but it is not guaranteed.)', line, c * 0.5);
+        }
+      }
+      for (const e of seen.values()) if (e.n >= 2 && (e.n - 1) * e.c * e.mult >= 8) add((e.n - 1) * e.c * e.mult >= 40 ? 'high' : 'med', 'The same call is made ' + e.n + ' times', e.text + ' appears on lines ' + e.lines.join(', ') + '. Store it once in a variable (for example "float v = ' + e.text + ';") and reuse it. If the inputs change between the lines, ignore this.', e.lines[1] || e.lines[0], (e.n - 1) * e.c * e.mult);
+      for (const L of loops) {
+        const body = tk.slice(L.k, L.end + 1); const hasTex = body.some((x, q) => x.t === 'id' && TEX.has(x.v) && isOp(body[q + 1], '('));
+        if (L.iters >= 16 && L.known) add('med', 'Loop with ' + L.iters + ' passes', 'Everything inside this loop runs ' + L.iters + ' times for every pixel. Fewer passes (a smaller number in the for line) cuts the cost almost in proportion.', L.line);
+        if (!L.known) add('low', 'Loop with an unclear length', 'The studio could not read the number of passes of this ' + L.kind + ' loop and assumed 8, so the estimate for it is a guess. Use a plain "for (int i = 0; i < 6; i++)" for a clear count.', L.line);
+        if (hasTex) add('med', 'Texture reads inside a loop', 'Each texture() read is slow compared to maths, and here it is repeated ' + L.iters + ' times per pixel. Fewer samples or a smaller loop helps a lot.', L.line);
+      }
+    }
+    // which helper dominates, and what to do about it
+    for (const c of an.calls) {
+      if (c.share >= 0.3 && HELPER_TIPS[c.name]) add(c.share >= 0.6 ? 'high' : 'med', c.name + '() is ' + Math.round(c.share * 100) + '% of the cost', HELPER_TIPS[c.name], 0, c.cost);
+    }
+    // faster twins of the noise helpers, with a one-click switch
+    const FAST = { fbm: 'fbmT', fbm3: 'fbm3T', noise: 'noiseT', noise3: 'noise3T', voronoi: 'voronoiT' };
+    for (const slow in FAST) {
+      const fastN = FAST[slow], re = new RegExp('\\b' + slow + '\\s*\\(', 'g'), n = (code.replace(/\/\/[^\n]*/g, '').match(re) || []).length;
+      if (!n || (table[slow] && table[slow].kind === 'user')) continue;
+      const a = helperCost(slow), b = helperCost(fastN), ratio = a && b ? a / b : 0;
+      add('med', slow + '() has a faster twin: ' + fastN + '()', fastN + '() gives the same kind of pattern but reads the studio\'s noise picture instead of calculating hashes' + (ratio >= 1.5 ? ', about ' + (ratio < 10 ? ratio.toFixed(1) : Math.round(ratio)) + ' times cheaper per call' : '') + '. The details of the pattern look a little different. Note: it needs the studio\'s noise texture (uNoiseTex), so an exported file would need that texture too.', 0, (a - b) * n, { label: 'Switch ' + n + ' call' + (n > 1 ? 's' : '') + ' to ' + fastN + '()', apply: c => c.replace(re, fastN + '(') });
+    }
+    if (an.total >= 800 && !/\bvec4\s+bake\s*\(/.test(code) && (counts.noise || 0) + (counts.noise3 || 0) + (counts.noiseT || 0) + (counts.noise3T || 0) + (counts.voronoi || 0) >= 12)
+      add('med', 'Precompute with bake()', 'If part of your pattern does not change over time, or only slides around, draw it ONCE with a bake() function and read it back with texture(uBake, uv) each frame. That turns dozens of noise calls into one or two reads. Use fbmTile() inside bake() so the picture repeats without a seam. See "bake" in the Docs tab.', 0, an.total * 0.5);
+    const fbmN = (counts.fbm || 0) + (counts.fbm3 || 0) + (counts.pfbm || 0);
+    if (fbmN >= 4) add('high', fbmN + ' fbm calls, about ' + fbmN * 5 + ' noise layers', 'This is the classic "domain warping" pattern: each warp layer multiplies the cost. Try one warp layer instead of two, or use noise() for the warp and keep fbm() only for the final pattern.', 0, fbmN * 5 * 20);
+    const heavy = Object.keys(counts).filter(k => HEAVY.has(k)).reduce((a, k) => a + counts[k], 0);
+    if (heavy >= 40) add('med', heavy + ' expensive maths calls per pixel', 'sin, cos, pow, exp, log, sqrt and atan are 4 to 12 times slower than +, - and *. This count includes the ones hidden inside helpers like noise(). Look at the "What the GPU does" list to see where they come from.', 0, heavy * 6);
+    const sevRank = { high: 0, med: 1, low: 2 };
+    S.sort((a, b) => sevRank[a.sev] - sevRank[b.sev] || b.save - a.save);
+    return S.filter((s, i) => S.findIndex(o => o.title === s.title && o.line === s.line && o.text === s.text) === i);
+  }
+
+  const hcache = {};
+  /** cost of one call of a studio helper (measured with the same analysis) */
+  function helperCost(name) {
+    if (hcache[name] !== undefined) return hcache[name];
+    const arg = /3/.test(name) ? 'vec3(0.3)' : 'vec2(0.3)'; let v = 0;
+    try { const r = analyze('void main() { ' + name + '(' + arg + '); }', true); v = r ? r.total - 1 : 0; } catch (e) { v = 0; }
+    return (hcache[name] = Math.max(v, 1));
+  }
+  const rate = total => total < 150 ? { name: 'Light', k: 0 } : total < 800 ? { name: 'Moderate', k: 1 } : total < 3500 ? { name: 'Heavy', k: 2 } : { name: 'Very heavy', k: 3 };
+
+  // ---------------------------------------------------------------- real timing
+  let bv = null;
+  const EMPTY = 'void main() { gl_FragColor = vec4(0.5, 0.5, 0.5, 1.0); }';
+  function view() { if (!bv) { const c = document.createElement('canvas'); c.width = c.height = 16; bv = new GLView(c); bv.fixedSize = true; } return bv; }
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  /** time one shader: returns ms per full-screen frame (or null) and how it was measured */
+  async function time(code, o, W, H) {
+    const v = view(); if (!v.ok) return null;
+    const b = v.build(code, false); if (!b.ok) return { error: b.errors[0] ? b.errors[0].msg : 'compile failed' };
+    const gl = v.gl, c = v.canvas; c.width = W; c.height = H;
+    const ext = gl.getExtension('EXT_disjoint_timer_query_webgl2'), px = new Uint8Array(4);
+    const draw = () => v.draw(Object.assign({}, o, { prog: b.prog, mode: 'flat', stretch: true, full: true, bg: 0 }));
+    const sync = () => gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    draw(); sync();                                              // compile + warm up
+    let t0 = performance.now(); for (let i = 0; i < 3; i++) draw(); sync(); const one = Math.max((performance.now() - t0) / 3, 0.05);
+    const n = Math.max(1, Math.min(60, Math.round(50 / one))), samples = [];
+    const reps = one > 300 ? 3 : one > 100 ? 5 : 7;
+    for (let r = 0; r < reps; r++) {
+      if (ext) {
+        const q = gl.createQuery(); gl.beginQuery(ext.TIME_ELAPSED_EXT, q); for (let i = 0; i < n; i++) draw(); gl.endQuery(ext.TIME_ELAPSED_EXT); sync();
+        for (let w = 0; w < 40 && !gl.getQueryParameter(q, gl.QUERY_RESULT_AVAILABLE); w++) await sleep(5);
+        if (gl.getQueryParameter(q, gl.QUERY_RESULT_AVAILABLE) && !gl.getParameter(ext.GPU_DISJOINT_EXT)) samples.push(gl.getQueryParameter(q, gl.QUERY_RESULT) / 1e6 / n);
+        gl.deleteQuery(q);
+      } else { t0 = performance.now(); for (let i = 0; i < n; i++) draw(); sync(); samples.push((performance.now() - t0) / n); }
+      await sleep(0);
+    }
+    v.free(b.prog);
+    if (!samples.length) return null;
+    samples.sort((a, b2) => a - b2);
+    return { ms: samples[Math.floor(samples.length / 2)], gpu: !!ext, n };
+  }
+  /** shader time and the time of an empty shader at the same size */
+  async function bench(code, o, W, H) {
+    const r = await time(code, o, W, H); if (!r || r.error) return r;
+    const base = await time(EMPTY, {}, W, H);
+    return { ms: r.ms, base: base && !base.error ? base.ms : 0, gpu: r.gpu, W, H };
+  }
+  return { analyze, bench, rate, BC, HEAVY };
+})();
+
 /* ===== docs.js : reference of everything you can use, each with a runnable example ===== */
 const DOCS = [];
-const CATS = ['Language', 'Built-in variables', 'Angles & trig', 'Power & exponent', 'Common math', 'Geometry', 'Matrices', 'Compare vectors', 'Derivatives', 'Textures', 'Noise & random', 'Shapes (2D distance)', 'Colour', 'Lighting', 'Helpers'];
+const CATS = ['Language', 'Built-in variables', 'Angles & trig', 'Power & exponent', 'Common math', 'Geometry', 'Matrices', 'Compare vectors', 'Derivatives', 'Textures', 'Noise & random', 'Shapes (2D distance)', 'Colour', 'Lighting', 'Helpers', 'Fast & precomputed'];
 const add = (cat, kind, n, sig, d, ex, o) => DOCS.push(Object.assign({ cat, kind, n, sig, d, ex }, o));
 /** plot a 1D function: x runs 0..1 across the picture, the curve is y */
 const fx = (expr, pre) => `// The curve is y, drawn for x from 0 (left) to 1 (right).
@@ -1670,6 +1998,62 @@ add('Helpers', 'fn', 'plot', 'plot(float v, float y)', 'A thin 0..1 line where v
 add('Helpers', 'fn', 'graphBG', 'graphBG(vec2 uv)', 'A dark graph-paper background for plotting.', `void main() {
   gl_FragColor = vec4(graphBG(vUv), 1.0);
 }`, Object.assign({ ret: 'vec3' }, STUDIO));
+
+// ------------------------------------------------------------------ fast & precomputed (studio helpers)
+const FASTNOTE = ' Studio helper: it reads the studio\'s random-number picture (uNoiseTex), so it only works where that picture is available.';
+add('Fast & precomputed', 'fn', 'hashT', 'hashT(vec2 cell)', 'Four random numbers 0..1 for a whole-number cell (the same cell always gives the same numbers). It reads them from a 256 × 256 picture of random values, so it is one texture read instead of a calculation like hash21(). The cell repeats every 256 units.' + FASTNOTE, `void main() {
+  vec4 h = hashT(floor(vUv * 12.0));   // one random colour per square
+  gl_FragColor = vec4(h.rgb, 1.0);
+}`, Object.assign({ ret: 'vec4' }, STUDIO));
+add('Fast & precomputed', 'fn', 'noiseT', 'noiseT(vec2 p)', 'Smooth value noise 0..1, the same idea as noise() but made with ONE texture read (the graphics card blends the neighbours for free) instead of four hashes and three mixes: roughly 2 times fewer operations. Same range, a slightly different pattern. Left half: noise(), right half: noiseT().' + FASTNOTE, `void main() {
+  vec2 p = vUv * 8.0;
+  float n = vUv.x < 0.5 ? noise(p) : noiseT(p);   // left: calculated, right: from the picture
+  gl_FragColor = vec4(vec3(n), 1.0);
+}`, Object.assign({ ret: 'float' }, STUDIO));
+add('Fast & precomputed', 'fn', 'noise3T', 'noise3T(vec3 p)', '3D version of noiseT(): two texture reads\' worth of work in one read (the picture hides a second layer in its green channel). Roughly 3 times fewer operations than noise3().' + FASTNOTE, `void main() {
+  float n = noise3T(vPos * 5.0);
+  gl_FragColor = finish(vec3(n), 1.0);
+}`, Object.assign({ ret: 'float', shape: true }, STUDIO));
+add('Fast & precomputed', 'fn', 'fbmT', 'fbmT(vec2 p)', 'Same layered cloud noise as fbm(), built from noiseT(): roughly 2 times fewer operations (use the Perf tab to measure on your own graphics card). Left half: fbm(), right half: fbmT().' + FASTNOTE, `void main() {
+  vec2 p = vUv * 6.0;
+  float f = vUv.x < 0.5 ? fbm(p) : fbmT(p);
+  gl_FragColor = vec4(vec3(f), 1.0);
+}`, Object.assign({ ret: 'float' }, STUDIO));
+add('Fast & precomputed', 'fn', 'fbm3T', 'fbm3T(vec3 p)', 'Same as fbm3(), built from noise3T(): the 3D clouds that follow the object, roughly 3 times fewer operations.' + FASTNOTE, `void main() {
+  float f = fbm3T(vPos * 3.0);
+  gl_FragColor = finish(mix(vec3(0.1, 0.2, 0.5), vec3(0.95), f), 1.0);
+}`, Object.assign({ ret: 'float', shape: true }, STUDIO));
+add('Fast & precomputed', 'fn', 'voronoiT', 'voronoiT(vec2 p)', 'Same result as voronoi() (x = distance to the nearest point, y = gap to the edge, z = cell id) but the random point of each cell comes from one texture read (a modest saving: the loop over 9 neighbour cells is most of the cost). Left half: voronoi(), right half: voronoiT().' + FASTNOTE, `void main() {
+  vec2 p = vUv * 6.0;
+  vec3 v = vUv.x < 0.5 ? voronoi(p) : voronoiT(p);
+  gl_FragColor = vec4(vec3(v.x), 1.0);
+}`, Object.assign({ ret: 'vec3' }, STUDIO));
+add('Fast & precomputed', 'fn', 'noiseTile', 'noiseTile(vec2 p, float period)', 'Value noise that repeats exactly every "period" cells (period must be a whole number). Made for bake(): a picture that tiles can be scrolled forever with no visible seam. The picture below shows 2 × 2 copies of one tile.', `void main() {
+  vec2 tile = fract(vUv * 2.0);
+  float n = noiseTile(tile * 4.0, 4.0);
+  gl_FragColor = vec4(vec3(n), 1.0);
+}`, Object.assign({ ret: 'float' }, STUDIO));
+add('Fast & precomputed', 'fn', 'fbmTile', 'fbmTile(vec2 p, float period)', 'Layered noise (like fbm) that repeats exactly every "period" cells at its coarsest layer, so it tiles with no seam. Use it inside bake(). The picture shows 2 × 2 copies of one tile.', `void main() {
+  vec2 tile = fract(vUv * 2.0);
+  float f = fbmTile(tile * 4.0, 4.0);
+  gl_FragColor = vec4(vec3(f), 1.0);
+}`, Object.assign({ ret: 'float' }, STUDIO));
+add('Fast & precomputed', 'fn', 'bake', 'vec4 bake(vec2 uv)', 'Precompute once instead of every frame. Write this function yourself: the studio draws it ONE time into a picture (when you edit the code or a uniform) and gives you the picture as uBake. Your main() then only needs one texture() read to get the expensive result back. Put a comment "// bake 1024" above it for a 1024 × 1024 picture (default 512, up to 2048). bake() cannot use uTime (it is drawn once), and the picture has 16-bit precision so it can hold heights and vectors, not just colours. To animate, scroll the lookup in main(), as below.', `// bake 512
+vec4 bake(vec2 uv) {          // runs ONE time, not every frame
+  float f = fbmTile(uv * 4.0, 4.0);
+  return vec4(f, 1.0 - f, 0.6, 1.0);
+}
+void main() {
+  vec2 uv = vUv + vec2(uTime * 0.05, 0.0);    // scroll the finished picture
+  gl_FragColor = vec4(texture(uBake, uv).rgb, 1.0);
+}`, Object.assign({ ret: 'vec4' }, STUDIO));
+add('Fast & precomputed', 'var', 'uBake', 'sampler2D uBake', 'The picture your bake() function was drawn into (empty if you have no bake()). Read it with texture(uBake, uv). It repeats past 0..1, so a tileable bake can scroll forever.', `// bake 256
+vec4 bake(vec2 uv) {
+  return vec4(vec3(step(0.5, fract(uv.x * 4.0))), 1.0);
+}
+void main() {
+  gl_FragColor = vec4(texture(uBake, vUv).rgb * vec3(1.0, 0.7, 0.3), 1.0);
+}`, Object.assign({}, STUDIO));
 
 // everything the studio adds on top of real GLSL gets flagged (the Docs tab and autocomplete mark it)
 for (const n of 'vUv vP vPos vP3 vN vW vWN uTime uSeed uResolution uLightDir uLightCol uAmbSky uAmbGround cameraPosition uTex0 uNoiseTex PI TAU gNormal gHasN gShine gRough gSpec gGlint gBlow gDirect gl_FragColor texture2D'.split(' ')) {
@@ -4126,7 +4510,7 @@ function compileMain() {
     el.textContent = '';
     for (const er of r.errors.slice(0, 12)) { const d = h('div', '', (er.line ? 'line ' + er.line + ': ' : '') + er.msg); if (er.line) d.onclick = () => ed.gotoLine(er.line); el.append(d); }
   }
-  rebuildUniforms(); markDirty(); updateLine(true);
+  rebuildUniforms(); markDirty(); updateLine(true); if (S.ui.tab === 'perf') refreshPerf(); else perfDirty = true;
 }
 const scheduleCompile = () => { clearTimeout(compT); compT = setTimeout(compileMain, 160); };
 function friendlyErr(msg) {
@@ -4268,6 +4652,8 @@ function buildHelp() {
   <div class="hint">Declare <code>uniform float uAmount; // 0.5 [0, 2]</code> and use it in main(): a slider appears in the Uniforms tab (start value, then range). <code>// color 1 0.5 0.2</code> after a vec3 gives a colour picker.</div>
   <h4>What the shader gets for free</h4>
   <div class="hint"><code>vUv</code> (0..1 across a face), <code>vPos</code> (position on the object), <code>vN</code> <code>vW</code> <code>vWN</code> (normals and world position), <code>uTime</code>, <code>uSeed</code>, <code>uLightDir</code> <code>uLightCol</code> <code>uAmbSky</code> <code>uAmbGround</code>, <code>cameraPosition</code>, two textures <code>uTex0</code> <code>uNoiseTex</code>, plus the helper functions (noise, fbm, voronoi, palette, sdf shapes, lighting...). Everything is listed in the <b>Docs</b> tab with a picture of what each one does.</div>
+  <h4>Making a shader faster</h4>
+  <div class="hint">Open the <b>Perf</b> tab: it estimates the cost, measures the real GPU time and lists ideas. The biggest wins: use the fast twins <code>noiseT</code> <code>fbmT</code> <code>fbm3T</code> <code>voronoiT</code> (they read a picture instead of calculating), and <b>bake</b> anything that does not change every frame: write a <code>vec4 bake(vec2 uv)</code> function, it is drawn once into <code>uBake</code>, and <code>main()</code> just reads it with <code>texture(uBake, uv)</code>. Both are studio-made, not GLSL (see the Docs tab, category "Fast &amp; precomputed").</div>
   <h4>Shader types</h4>
   <div class="hint"><b>opaque</b> is a normal solid surface. <b>transparent</b> blends with what is behind it, using the alpha you give in <code>gl_FragColor</code> (try the Checker background in the Scene tab).</div>
   <h4>Saving</h4>
@@ -4475,11 +4861,108 @@ const scrollKey = () => (S.ui.tab === 'learn' ? 'learn:' + (S.ui.lesson || '') :
 function saveScroll() { if (!S.ui.scroll) S.ui.scroll = {}; if (scrollReady) S.ui.scroll[scrollKey()] = $('#tabbody').scrollTop; }
 function restoreScroll() { const y = (S.ui.scroll || {})[scrollKey()] || 0; const tb = $('#tabbody'); tb.scrollTop = y; requestAnimationFrame(() => { if (Math.abs(tb.scrollTop - y) > 2) tb.scrollTop = y; }); }
 function goLesson(id, fresh) { saveScroll(); S.ui.lesson = id; if (fresh && S.ui.scroll) delete S.ui.scroll['learn:' + id]; saveSoon(); renderLearn(); restoreScroll(); }
+// ------------------------------------------------------------------ Perf tab: estimated cost + real GPU timing
+let perfSize = '1024', perfT = null, perfRun = 0, perfDirty = true;
+const PERF_SIZES = { '512': [512, 512, '512 × 512'], '1024': [1024, 1024, '1024 × 1024'], '1080': [1920, 1080, '1920 × 1080 (full HD)'] };
+function buildPerf() {
+  const pane = $('#tab-perf'); pane.textContent = '';
+  pane.append(h('h4', '', 'Speed check'));
+  const sc = h('div', 'pscore'); sc.id = 'pScore'; pane.append(sc);
+  const row = h('div', 'pmeasure'), sel = h('select'); sel.id = 'pSize';
+  for (const k in PERF_SIZES) { const o = h('option', '', PERF_SIZES[k][2]); o.value = k; sel.append(o); } sel.value = perfSize;
+  sel.onchange = () => { perfSize = sel.value; runBench(); };
+  const mb = h('button', '', 'Measure GPU time'); mb.onclick = () => runBench();
+  row.append(h('span', '', 'Test size'), sel, mb); pane.append(row);
+  const res = h('div', 'pres'); res.id = 'pRes'; pane.append(res);
+  pane.append(h('div', 'hint', 'The time is measured on this computer\'s graphics card by drawing the shader full-screen at the size above. Phones and laptops without a dedicated GPU are often 3 to 10 times slower. Aim for less than 2 ms at full HD if you want it to run smoothly everywhere.'));
+  const body = h('div'); body.id = 'pBody'; pane.append(body);
+}
+function pn(n) { return n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(Math.round(n)); }
+function refreshPerf(measure) {
+  if (S.ui.tab !== 'perf') { perfDirty = true; return; }
+  perfDirty = false;
+  const body = $('#pBody'), sc = $('#pScore'); body.textContent = ''; sc.textContent = '';
+  let an = null; try { an = Perf.analyze(ed.value); } catch (e) { console.warn(e); }
+  if (!an) { sc.append(h('div', 'hint', 'No void main() found yet, so there is nothing to measure.')); $('#pRes').textContent = ''; return; }
+  const rt = Perf.rate(an.total);
+  const top = h('div', 'ptop'); top.append(h('span', 'prate r' + rt.k, rt.name), h('span', 'pnum', '≈ ' + pn(an.total) + ' work units per pixel'));
+  sc.append(top);
+  const bar = h('div', 'pbar'), fill = h('i'); fill.style.width = Math.min(100, Math.log10(1 + an.total) / Math.log10(10000) * 100) + '%'; fill.className = 'r' + rt.k; bar.append(fill);
+  for (const [v, l] of [[150, 'light'], [800, 'moderate'], [3500, 'heavy']]) { const t = h('b'); t.style.left = Math.log10(1 + v) / Math.log10(10000) * 100 + '%'; t.title = l + ' from ' + v; bar.append(t); }
+  sc.append(bar, h('div', 'hint', 'Units are the studio\'s own estimate of how much arithmetic every pixel needs (a + or * is 1, sin about 8, pow about 12, a texture read 20). Only compare shaders with each other, and trust the measured time below for the real answer.'));
+  // where the cost sits
+  body.append(h('h4', '', 'Where the cost is'));
+  const tbl = h('div', 'ptable');
+  for (const c of an.calls.slice(0, 10)) {
+    const r = h('div', 'prow'), nm = h('span', 'pn', c.name + '()');
+    if (c.kind === 'studio') nm.append(h('span', 'stag', 'studio-made'));
+    else if (c.kind === 'user') nm.append(h('span', 'ptag', 'yours'));
+    nm.onclick = () => { if (c.kind === 'user') { const f = an.userFns.find(x => x.name === c.name); if (f && f.tokens[0]) ed.gotoLine(f.lineAt(f.tokens[0].s)); } else openDoc(c.name); };
+    const b = h('span', 'pb'), i = h('i'); i.style.width = Math.max(2, c.share * 100) + '%'; b.append(i);
+    r.append(nm, h('span', 'px', '×' + (Number.isInteger(c.n) ? c.n : c.n.toFixed(1))), b, h('span', 'ps', Math.round(c.share * 100) + '%')); tbl.append(r);
+  }
+  if (!an.calls.length) tbl.append(h('div', 'hint', 'main() only uses simple arithmetic.'));
+  body.append(tbl, h('div', 'hint', 'Every function main() calls, with how many times it runs and its share of the total (this includes everything that function calls inside). Click a name to read about it.'));
+  // costliest lines
+  if (an.lines.length) {
+    body.append(h('h4', '', 'Costliest lines of your code'));
+    const ll = h('div', 'plines');
+    for (const l of an.lines.slice(0, 6)) {
+      const r = h('div', 'pline'); r.append(h('span', 'pl', 'line ' + l.line), h('span', 'pt', l.text), h('span', 'ps', Math.round(l.share * 100) + '%'));
+      r.onclick = () => ed.gotoLine(l.line); ll.append(r);
+    }
+    body.append(ll, h('div', 'hint', 'Click a line to jump to it. A line inside a helper function you wrote counts every time main() reaches it.'));
+  }
+  // what the GPU really does
+  const C = an.counts, sum = ks => ks.reduce((a, k) => a + (C[k] || 0), 0);
+  const facts = [
+    [sum(['noise', 'noise3']), 'noise lookups', 'noise() and noise3() calls, counting the ones inside fbm and friends'],
+    [sum(Object.keys(C).filter(k => /^hash/.test(k))), 'random-number hashes', 'each noise lookup needs 4 to 8 of these'],
+    [sum([...Perf.HEAVY]), 'slow maths calls', 'sin, cos, pow, exp, log, sqrt, atan: 4 to 12 times slower than + - *'],
+    [sum(['texture', 'texture2D', 'textureLod', 'texelFetch']), 'texture reads', 'reading a picture is slower than maths'],
+    [sum(['dFdx', 'dFdy', 'fwidth']), 'derivatives', 'dFdx / dFdy / fwidth (used by bumps and smooth edges)'],
+    [sum(['normalize', 'length', 'distance']), 'normalize / length calls', 'each includes a square root'],
+  ].filter(f => f[0] > 0);
+  if (facts.length) {
+    body.append(h('h4', '', 'What the GPU does for every pixel'));
+    const g = h('div', 'pfacts'); for (const [n, l, t] of facts) { const f = h('div', 'pfact'); f.title = t; f.append(h('b', '', pn(n)), h('span', '', l)); g.append(f); }
+    body.append(g);
+  }
+  // suggestions
+  body.append(h('h4', '', 'Ideas to make it faster'));
+  if (!an.suggestions.length) body.append(h('div', 'psug ok', 'Nothing obvious to cut. If it is still slow, measure again after removing one effect at a time (comment a line out and watch the time).'));
+  for (const sg of an.suggestions.slice(0, 12)) {
+    const d = h('div', 'psug ' + sg.sev); d.append(h('div', 'sgt', sg.title), h('div', 'sgx', sg.text));
+    if (sg.fix) { const bt = h('button', 'pfix', sg.fix.label); bt.onclick = () => { const cur = ed.ta.selectionStart; ed.edit(0, ed.value.length, sg.fix.apply(ed.value), cur, cur); toast('Changed. Ctrl+Z undoes it.'); }; d.append(bt); }
+    if (sg.line) { const a = h('a', 'dl', 'go to line ' + sg.line); a.onclick = () => ed.gotoLine(sg.line); d.append(a); }
+    body.append(d);
+  }
+  body.append(h('div', 'hint', 'These are suggestions, not rules: the graphics driver already optimises some of this, so confirm each change with the measured time.'));
+  if (measure !== false) { clearTimeout(perfT); perfT = setTimeout(runBench, measure === 'now' ? 30 : 700); }
+}
+async function runBench() {
+  if (S.ui.tab !== 'perf') return;
+  const my = ++perfRun, res = $('#pRes'); if (!res) return;
+  if (S.errors && S.errors.length) { res.textContent = 'Fix the errors first, then the time can be measured.'; res.className = 'pres'; return; }
+  res.className = 'pres busy'; res.textContent = 'Measuring…';
+  await new Promise(r => setTimeout(r, 30));
+  const [W, H] = PERF_SIZES[perfSize], sc = S.scene;
+  let r = null; try { r = await Perf.bench(ed.value, { time: S.time, seed: sc.seed, uvals: S.uv, tod: sc.tod, az: sc.az, el: sc.el, transparent: S.cur.type === 'transparent' }, W, H); } catch (e) { console.warn(e); }
+  if (my !== perfRun) return;
+  res.textContent = ''; res.className = 'pres';
+  if (!r || r.error) { res.textContent = r && r.error ? 'Could not measure: ' + r.error : 'Could not measure on this browser.'; return; }
+  const add = Math.max(0, r.ms - r.base), hd = r.ms * (1920 * 1080) / (W * H), hdAdd = add * (1920 * 1080) / (W * H);
+  const fmt = x => x < 0.01 ? '<0.01' : x < 10 ? x.toFixed(2) : x.toFixed(1);
+  const k = hd < 2 ? 0 : hd < 6 ? 1 : hd < 12 ? 2 : 3, words = ['Fast: plenty of room left.', 'Fine on most computers.', 'Heavy: may stutter on weaker graphics cards.', 'Too heavy for smooth 60 fps at full HD on this card.'][k];
+  res.append(h('div', 'pbig r' + k, fmt(r.ms) + ' ms per frame'), h('div', 'pline2', 'at ' + PERF_SIZES[perfSize][2] + ' · ' + (r.gpu ? 'measured by the GPU timer' : 'wall-clock time (this browser has no GPU timer, so it is rougher)')));
+  res.append(h('div', 'pline2', 'An empty shader takes ' + fmt(r.base) + ' ms here, so your shader adds ≈ ' + fmt(add) + ' ms.'));
+  res.append(h('div', 'pline2', 'At full HD that scales to ≈ ' + fmt(hd) + ' ms per frame (' + Math.round(hd / 16.7 * 100) + '% of a 60 fps frame; ≈ ' + fmt(hdAdd) + ' ms of it is your shader). ' + words));
+}
 function showTab(name) {
   saveScroll(); scrollReady = true;
   S.ui.tab = name; for (const b of document.querySelectorAll('#tabs button[data-tab]')) b.classList.toggle('on', b.dataset.tab === name);
   for (const p of document.querySelectorAll('.pane')) p.classList.toggle('on', p.id === 'tab-' + name);
-  if (name === 'docs') buildDocs(); if (name === 'learn') renderLearn(); restoreScroll(); saveSoon();
+  if (name === 'docs') buildDocs(); if (name === 'learn') renderLearn(); if (name === 'perf') refreshPerf('now'); restoreScroll(); saveSoon();
 }
 function openDoc(word) {
   showTab('docs'); const c = document.getElementById('doc-' + word);
@@ -4544,7 +5027,7 @@ function init() {
     onSave: () => toast('Saved. (Everything is saved automatically in this browser.)'), onRun: () => compileMain(),
   });
   let wasMod = false; window.isModifiedChangedFlag = () => { const m = isModified(S.cur); const ch = m !== wasMod; wasMod = m; return ch; };
-  buildLineHead(); buildShapes(); buildScene(); buildHelp(); exportSetup(); renderLib();
+  buildLineHead(); buildShapes(); buildScene(); buildHelp(); buildPerf(); exportSetup(); renderLib();
   orbit(view, () => true); orbit(view2, () => S.line.mode === 'shape');
   $('#bName').textContent = S.cur.name; $('#typeSel').value = S.cur.type; wasMod = isModified(S.cur);
   $('#typeSel').onchange = e => { S.cur.type = e.target.value; renderLib(); markDirty(); saveSoon(); };
