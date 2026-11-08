@@ -2316,7 +2316,7 @@ Here the angle picks the **hue** and the distance darkens the colour ([[hsv2rgb]
 // ====================================================================== 2
 lesson('orb', 'Build a glowing orb', 'Beginner',
   'Draw a shape, soften its edge, colour it, shade it, add a glow and animate it. Each step changes only a little.', [
-  { t: 'A hard-edged circle', x: `Start with the distance from the middle (see lesson 1). [[step]](edge, x) returns 0 if x is below the edge and 1 if it is above, so \`1.0 - step(0.3, d)\` is 1 **inside** radius 0.3 and 0 outside. That 0/1 picture is called a **mask**. Masks are how you say "put this here, not there".`,
+  { t: 'A hard-edged circle', x: `Start with the distance from the middle (see the UV lesson). [[step]](edge, x) returns 0 if x is below the edge and 1 if it is above, so \`1.0 - step(0.3, d)\` is 1 **inside** radius 0.3 and 0 outside. That 0/1 picture is called a **mask**. Masks are how you say "put this here, not there".`,
     code: `void main() {
   vec2 p = vUv - 0.5;
   float d = length(p);
@@ -2410,7 +2410,7 @@ lesson('patterns', 'Repeating patterns: stripes, checkers, bricks', 'Beginner',
   vec3 col = mix(vec3(0.1, 0.15, 0.3), vec3(0.95, 0.85, 0.5), s);
   gl_FragColor = vec4(col, 1.0);
 }` },
-  { t: 'Cut space into cells', x: `Do both together on a 2D position. \`floor(g)\` is the **whole part**: which cell am I in (0,0), (1,0), (2,0)... \`fract(g)\` is the **position inside** that cell, 0..1 in x and y. Here the cell's inner position is shown as red/green, so every cell contains a small copy of the first lesson's picture.
+  { t: 'Cut space into cells', x: `Do both together on a 2D position. \`floor(g)\` is the **whole part**: which cell am I in (0,0), (1,0), (2,0)... \`fract(g)\` is the **position inside** that cell, 0..1 in x and y. Here the cell's inner position is shown as red/green, so every cell contains a small copy of the UV lesson's picture.
 
 These two values are the basis of grids, tiles, bricks, hex patterns, random-per-cell effects and noise.`,
     code: `void main() {
@@ -2837,6 +2837,202 @@ When you build your own: finish one layer, look at it, then add the next. If som
   gl_FragColor = vec4(col, 1.0);
 }`, shape: true },
 ], true);
+
+// ====================================================================== the two foundation lessons (moved to the front below)
+lesson('basics', 'The very first shader: main() and colour', 'Absolute beginner',
+  'One line of code that paints everything red, then what `void main()`, `gl_FragColor`, `vec4` and the four colour numbers really mean.', [
+  { t: 'One line, one colour', x: `This is a complete shader. It has one job: **decide the colour of a pixel**. The line sets \`gl_FragColor\`, the shader's output, to \`vec4(1.0, 0.0, 0.0, 1.0)\`: four numbers, which are red, green, blue and alpha.
+
+Red is 1.0 (full), green and blue are 0.0 (none): so everything is red. Click the line in the editor and change a number. The picture on this page and the big preview change right away.
+
+The \`void main() { ... }\` around the line is just the wrapper every shader needs. The next step explains it.`,
+    code: `void main() {
+  gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
+}` },
+  { t: 'What void main() { } means', x: `\`main\` is the **name** of the function the graphics card runs. You don't call it; the card calls it for you, once for every pixel.
+
+**void** means "this function gives nothing back". Instead of returning a value, it **writes** its answer into the special variable \`gl_FragColor\` (the "fragment colour": a fragment is a pixel-to-be). Whatever is in \`gl_FragColor\` when \`main\` ends is the pixel's colour.
+
+**{ }** (curly braces) hold the function's body: everything between them belongs to \`main\`. Every line that does something ends with a **semicolon** \`;\`. A missing semicolon is the most common first error: the red message under the editor tells you the line.
+
+Text after \`//\` is a **comment**: the computer ignores it, it's for you.`,
+    code: `void main() {
+  // everything in here runs once per pixel
+  gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);   // red
+}` },
+  { t: 'The four numbers: r, g, b, a', x: `The colour is described by **four numbers**, always in this order:
+
+**r** red amount, **g** green amount, **b** blue amount, **a** alpha (how opaque; 1.0 is solid).
+
+Each goes from **0.0** (none) to **1.0** (full). Screens make every colour by mixing red, green and blue light, so mixing is *adding light*: red + green = **yellow**, all three = **white**, none = **black**. Alpha only matters when the shader type is set to *transparent* (top bar); otherwise keep it 1.0.
+
+Try: \`(0,1,0,1)\` green, \`(1,1,0,1)\` yellow, \`(0.5,0.5,0.5,1)\` mid grey. Here is yellow.`,
+    code: `void main() {
+  gl_FragColor = vec4(1.0, 1.0, 0.0, 1.0);
+}` },
+  { t: 'Give each number a name', x: `\`vec4(1.0, 1.0, 0.0, 1.0)\` is hard to read: which number is which? Let's **name the four numbers** first. \`float\` is the type for **a single decimal number**; we declare four, then pass them to \`vec4(...)\` in the same order.
+
+The result is identical to the one-liner. Nothing new happens on screen: this is only a clearer way to write the same thing, and it is the pattern all shaders use: **compute numbers, gather them into a colour at the end**. The green lines are the new ones.`,
+    code: `void main() {
+  float r = 1.0;
+  float g = 1.0;
+  float b = 0.0;
+  float a = 1.0;
+  gl_FragColor = vec4(r, g, b, a);
+}` },
+  { t: 'Why 1.0 and not 1?', x: `Shaders are strict about types. \`1\` is an **int** (a whole number) and \`1.0\` is a **float** (a decimal number); GLSL does **not** convert between them for you. Writing \`vec4(1, 0, 0, 1)\` with ints can give an error on some graphics cards, so always put the **.0**.
+
+Also: the numbers don't have to be fixed. Here \`r\` is half-way and \`b\` is made from \`r\`: **a value can be calculated from other values**, which is the entire game from now on. Change \`r\` and watch \`b\` follow.`,
+    code: `void main() {
+  float r = 0.5;
+  float g = 0.2;
+  float b = 1.0 - r;
+  float a = 1.0;
+  gl_FragColor = vec4(r, g, b, a);
+}` },
+  { t: 'What is a vector?', x: `\`vec4\` is a **vector**: a small bundle of numbers stored together under one name. There are three sizes you'll use:
+
+**vec2**, two numbers (x, y), usually a **position**
+**vec3**, three numbers, usually a **colour** (r, g, b) or a **direction** (x, y, z)
+**vec4**, four numbers, a colour with alpha
+
+You can pick the parts out by name: for colours \`.r .g .b .a\`, for positions \`.x .y .z .w\` (the same four slots, two sets of names). So \`c.r\` is the first number. And you can write \`c.g = 0.0\` to change one part. Below, build one colour as a \`vec4\` and set a part.`,
+    code: `void main() {
+  vec4 c = vec4(1.0, 0.5, 0.0, 1.0);
+  c.g = 0.9;
+  gl_FragColor = c;
+}` },
+  { t: 'Shorter ways to build a vector', x: `Writing every number gets long. GLSL lets you **mix pieces** when making a vector: the pieces just have to add up to the right number of values.
+
+\`vec3(0.2, 0.6, 1.0)\`, three numbers, an RGB colour.
+\`vec4(col, 1.0)\`, a vec3 plus one float = a vec4: "this colour, fully opaque".
+\`vec3(0.5)\`, one number repeated: \`vec3(0.5, 0.5, 0.5)\`, a grey.
+
+Almost every shader does the first two: **make an RGB colour, then add the alpha at the end.**`,
+    code: `void main() {
+  vec3 col = vec3(0.2, 0.6, 1.0);
+  gl_FragColor = vec4(col, 1.0);
+}` },
+  { t: 'Maths on vectors', x: `The big advantage of vectors: arithmetic works on **all parts at once**. \`col * 0.5\` halves every part (darker), \`col + 0.2\` adds 0.2 to every part (lighter), and \`a * b\` multiplies matching parts (red with red, green with green...). Multiplying two colours is how you **tint**: a white thing times orange becomes orange.
+
+Here a sky blue is multiplied by an orange tint (red stays 0.2, green drops to 0.42, blue drops to 0.3), then 0.1 is added to all three. Change the tint and see.`,
+    code: `void main() {
+  vec3 col = vec3(0.2, 0.6, 1.0);
+  vec3 tint = vec3(1.0, 0.7, 0.3);
+  col = col * tint;
+  col = col + 0.1;
+  gl_FragColor = vec4(col, 1.0);
+}` },
+  { t: 'Limits: below 0 and above 1', x: `The screen can only show 0..1. A value of 2.0 shows exactly like 1.0 (it is **clamped**), and -1.0 shows like 0.0. So these two colours look the same, even though the numbers differ. The extra brightness is only visible **inside** the shader, when you later multiply or blend (which is how glows are built).
+
+You now know every piece in a one-line shader. Next: how the card actually **runs** it, and what that means. The "How shaders run" lesson is next.`,
+    code: `void main() {
+  vec3 a = vec3(1.0, 0.5, 0.2);
+  vec3 b = vec3(3.0, 0.5, 0.2);
+  gl_FragColor = vec4(mix(a, b, step(0.5, vUv.x)), 1.0);
+}` },
+]);
+
+lesson('pixels', 'How shaders run: one pixel at a time', 'Absolute beginner',
+  'Your code runs separately for every pixel, and a pixel cannot see its neighbours. Why this is true, what follows from it, and the questions to ask when designing an effect.', [
+  { t: 'The same code, everywhere at once', x: `A shader is **one small program run again and again, once for each pixel** of the object, all at the same moment (a graphics card has thousands of tiny processors). A 500 × 500 picture means 250,000 separate runs of \`main()\`.
+
+Every run is identical code. If they all received the same inputs they'd all give the same colour. What makes the picture interesting is that **each pixel is told where it is**: the input [[vUv]] is different for each one. Pixel A gets \`vUv = (0.1, 0.2)\`, pixel B gets \`(0.8, 0.5)\`. The whole picture below comes from one formula, answered 250,000 times with different positions.`,
+    code: `void main() {
+  gl_FragColor = vec4(vUv.x, vUv.y, 0.5, 1.0);
+}` },
+  { t: 'The rule: pixels cannot talk to each other', x: `Here is the most important idea in shader writing:
+
+**Each pixel is calculated alone. It can't read what its neighbour got, and it can't see what another pixel is doing.**
+
+They run at the same time, so there isn't a "left pixel first, then me" order, and nothing to look at. If you write "my colour = my left neighbour's colour + a bit" there is nowhere to read that from.
+
+So everything a pixel knows comes from: **its own position** (\`vUv\`, \`vPos\`...), **numbers that are the same for everybody** (\`uTime\`, uniforms), and the **maths in your code**. In this picture each pixel works out its colour from its own \`vUv.x\` only. It "looks" like neighbours are related, but each is just evaluating the same formula.`,
+    code: `void main() {
+  float v = 0.5 + 0.5 * sin(vUv.x * 30.0);
+  gl_FragColor = vec4(vec3(v), 1.0);
+}` },
+  { t: 'Proof: pixels that truly ignore each other', x: `Here's what independence looks like. [[hash21]] gives a random number from a position. Giving it the pixel position gives **each pixel its own unrelated random value**: static, like an untuned TV. Two neighbouring pixels have nothing in common, because neither knows the other exists.
+
+Compare with the previous step, where nearby pixels look alike. That's **not** because they communicate: it's because \`sin\` is a *smooth* function, so a tiny change in position gives a tiny change in answer. **Smooth input and smooth formula = smooth picture. Random formula = static.**`,
+    code: `void main() {
+  float r = hash21(floor(vUv * 64.0));
+  gl_FragColor = vec4(vec3(r), 1.0);
+}` },
+  { t: 'No memory between pixels or frames', x: `Variables you create inside \`main\` are **born when that pixel's run starts and die when it ends**. Nothing is saved for the next pixel and nothing is kept from the previous frame. 60 times a second the card draws the whole picture again from scratch.
+
+So how can a shader animate? Through the **inputs** that change: \`uTime\` increases every frame, and every pixel receives the same current value. The picture moves because the *formula's input* moved, not because anything was remembered.
+
+Hover the picture: the same pixel position gives a different colour at a different \`uTime\`.`,
+    code: `void main() {
+  float v = 0.5 + 0.5 * sin(vUv.x * 30.0 - uTime * 4.0);
+  gl_FragColor = vec4(vec3(v), 1.0);
+}` },
+  { t: 'Think from the pixel\'s point of view', x: `Because of all this, shader writing is a particular way of thinking. You don't "draw a line"; each pixel asks itself **"am I on the line?"**. You don't "draw a circle at the middle"; each pixel asks **"how far am I from the middle?"** and answers with a colour.
+
+So the recipe for any effect: **write down the question a single pixel would ask about its own position, answer it with a number, turn the number into a colour.**
+
+Here every pixel asks: "how far am I from the line between these two points?" ([[sdSegment]] answers that), then [[smoothstep]] turns the distance into a thin bright line. Nobody drew a line: the pixels close to it just chose to be white.`,
+    code: `void main() {
+  vec2 p = (vUv - 0.5) * 2.0;
+  float d = sdSegment(p, vec2(-0.6, -0.5), vec2(0.7, 0.4));
+  float line = 1.0 - smoothstep(0.02, 0.05, d);
+  gl_FragColor = vec4(vec3(line), 1.0);
+}` },
+  { t: 'Looking at a neighbour: ask the formula again', x: `You can't read a neighbour's **result**, but you *can* calculate what the neighbour **would** get, because the formula is yours. Put the logic in a function, then call it with a slightly different position: that is "asking about the pixel next to me" by doing the sum again.
+
+Here \`shape(p)\` is 1 inside a circle. To find the **edge** we compare my answer with the answer at a point a bit to the right and a bit above: where they differ, I'm on the border. This trick (sampling the same formula at nearby points) is how outlines, blurs and soft shadows are made.`,
+    code: `float shape(vec2 p) {
+  return 1.0 - step(0.6, length(p));
+}
+void main() {
+  vec2 p = (vUv - 0.5) * 2.0;
+  float me = shape(p);
+  float right = shape(p + vec2(0.03, 0.0));
+  float up = shape(p + vec2(0.0, 0.03));
+  float edge = abs(me - right) + abs(me - up);
+  gl_FragColor = vec4(vec3(me * 0.25 + edge), 1.0);
+}` },
+  { t: 'Same for everyone vs different per pixel', x: `Now we can name the two kinds of inputs, a distinction used everywhere in the docs:
+
+**Uniforms** are the **same for every pixel** in a frame: \`uTime\`, \`uSeed\`, \`uLightDir\`, and the sliders in the Uniforms tab. Set once, read by everyone.
+
+**Varyings** (or "per-pixel inputs") **differ from pixel to pixel**: \`vUv\`, \`vPos\`, \`vN\`. The graphics card fills in smoothly-changing values between the corners of the shape for each pixel.
+
+In the picture below the bottom half is built only from a uniform (every pixel agrees: a flat colour that changes with time), the top half uses \`vUv\` (every pixel differs: a gradient). Hover to see the bottom half pulse as one.`,
+    code: `void main() {
+  vec3 same = vec3(0.5 + 0.5 * sin(uTime * 2.0), 0.4, 0.8);
+  vec3 differs = vec3(vUv.x, 0.4, 0.8);
+  vec3 col = mix(same, differs, step(0.5, vUv.y));
+  gl_FragColor = vec4(col, 1.0);
+}` },
+  { t: 'On a 3D shape it is the same', x: `Nothing changes in 3D. The pixels of the sphere you see in the big preview are each one run of the shader, and the per-pixel inputs now include the surface direction [[surfNormal]] and the position \`vPos\`. The picture is still **one question per pixel**: "which way does *my* bit of surface face?"
+
+Here each pixel colours itself by how much its own surface points upwards. The pixel on the top of the sphere and the pixel at the side never exchange information. They each look at the arrow they were handed.`,
+    code: `void main() {
+  float up = surfNormal().y * 0.5 + 0.5;
+  gl_FragColor = vec4(vec3(up), 1.0);
+}`, shape: true },
+  { t: 'The one exception: derivatives', x: `There **is** one controlled way to peek at neighbours. The card runs pixels in small groups (2 × 2) and lets you ask how much a value **changes** between a pixel and its neighbour: [[dFdx]] (change to the right) and [[dFdy]] (change upwards), and [[fwidth]] (the total size of the change).
+
+It does not give you the neighbour's colour; it gives you the **difference of one value**. That's enough for things like **crisp anti-aliased lines** and for **bump mapping**: [[bumpFromHeight]] measures how steeply a height changes between pixels to find the slope. Here brightness shows how fast \`sin\` changes per pixel: bright where it is steep, dark at the tops and bottoms of the waves.`,
+    code: `void main() {
+  float wave = sin(vUv.x * 40.0);
+  float change = fwidth(wave) * 12.0;
+  gl_FragColor = vec4(vec3(change), 1.0);
+}` },
+  { t: 'Summary of the rules', x: `**1.** \`main()\` runs once per pixel, all at the same time.
+**2.** A pixel's colour is a function of its **own inputs only**: position, uniforms, constants.
+**3.** Pixels can't read each other's results or share variables. Variables vanish after each run, and nothing carries over between frames except the changing \`uTime\`.
+**4.** To involve "nearby" areas, evaluate your own formula at a **nearby position** (edges, blurs) or use **derivatives** (change per pixel).
+**5.** Design effects by asking: **"What would one pixel need to know about itself to pick its colour?"**
+
+With this vocabulary the other lessons (patterns, lighting, bump) will read easily. For example a bump map doesn't move anything: each pixel just receives a *slightly different normal*.`,
+  },
+]);
+
+// put the two foundation lessons first
+(() => { for (const id of ['pixels', 'basics']) { const i = LESSONS.findIndex(l => l.id === id); LESSONS.unshift(LESSONS.splice(i, 1)[0]); } })();
 
 /* ===== editor.js : a small self-contained code editor engine for GLSL =====
    textarea (input, caret, selection) + a highlighted <pre> underneath + line-number gutter.
@@ -3659,7 +3855,7 @@ function openExample(d) {
 // ------------------------------------------------------------------ learn tab
 function mdText(src) {
   const link = n => (DOC_BY[n] ? '<a class="dl" data-doc="' + n + '">' + n + '</a>' : '<code>' + GL.esc(n) + '</code>');
-  const inline = t => GL.esc(t).replace(/\[\[(\w+)\]\]/g, (m, n) => link(n)).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+  const inline = t => GL.esc(t).replace(/\[\[(\w+)\]\]/g, (m, n) => link(n)).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/(^|[^*\w])\*([^*\n]+)\*(?![*\w])/g, '$1<i>$2</i>');
   return src.split(/\n\n+/).map(par => '<p>' + par.split('\n').map(inline).join('<br>') + '</p>').join('');
 }
 let learnObserver = null;
