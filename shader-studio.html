@@ -4171,17 +4171,32 @@ function buildDocs() {
   const wide = h('button', '', '⇔ Wide'); wide.title = 'Make the side panel wider'; wide.onclick = () => { document.body.classList.toggle('wide-docs'); markDirty(); };
   chips.append(wide);
   pane.append(tools);
-  let catSel = null; const cards = [];
+  let catSel = null, reordered = false; const cards = [];
   const note = h('div', 'hint dnote'); pane.append(note);
+  const scoreOf = (d, words, full) => {   // higher = better; -1 = not a match. Name matches always beat matches inside descriptions.
+    const n = d.n.toLowerCase(), sig = d.sig.toLowerCase(), ds = d.d.toLowerCase(), cat = d.cat.toLowerCase(), ret = (d.ret || '').toLowerCase();
+    let total = 0;
+    for (const w of words) {
+      let b = 0;
+      if (n === w) b = 1000; else if (n.startsWith(w)) b = 600 - Math.min(n.length - w.length, 50); else if (n.includes(w)) b = 400;
+      else if (sig.includes(w)) b = 200; else if (cat.includes(w) || ret.includes(w)) b = 100;
+      else if (new RegExp('\\b' + w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b').test(ds)) b = 60; else if (ds.includes(w)) b = 30;
+      if (!b) return -1; total += b;
+    }
+    if (n === full) total += 2000;
+    return total;
+  };
   const apply = () => {
     const t = q.value.trim().toLowerCase(), words = t.split(/\s+/).filter(Boolean), searching = words.length > 0; let shown = 0;
     chips.classList.toggle('dim', searching && !!catSel);   // a typed search always looks in every category
+    const hits = [];
     for (const c of cards) {
-      const d = c._d, hay = (d.n + ' ' + d.sig + ' ' + d.d + ' ' + d.cat + ' ' + (d.ret || '')).toLowerCase();
-      const hit = searching ? words.every(w => hay.includes(w)) : (!catSel || d.cat === catSel);
-      c.style.display = hit ? '' : 'none'; if (hit) shown++;
+      const d = c._d, sc = searching ? scoreOf(d, words, t) : ((!catSel || d.cat === catSel) ? 0 : -1);
+      c.style.display = sc >= 0 ? '' : 'none'; if (sc >= 0) { shown++; hits.push([sc, c._i, c]); }
     }
-    note.textContent = searching ? (shown ? shown + ' result' + (shown === 1 ? '' : 's') + ' in all categories' + (catSel ? ' (the "' + catSel + '" filter is ignored while you search)' : '') : 'Nothing found for "' + q.value.trim() + '" in any category. Try fewer or different words.') : (shown + ' entries' + (catSel ? ' in ' + catSel : ''));
+    if (searching) { hits.sort((a, b) => b[0] - a[0] || a[1] - b[1]); for (const h2 of hits) pane.append(h2[2]); reordered = true; }   // best match first
+    else if (reordered) { for (const c of cards) pane.append(c); reordered = false; }                                                    // back to the normal order
+    note.textContent = searching ? (shown ? shown + ' result' + (shown === 1 ? '' : 's') + ' in all categories, best match first' + (catSel ? ' (the "' + catSel + '" filter is ignored while you search)' : '') : 'Nothing found for "' + q.value.trim() + '" in any category. Try fewer or different words.') : (shown + ' entries' + (catSel ? ' in ' + catSel : ''));
     note.style.display = '';
   };
   const mkChip = (label, cat) => { const b = h('button', '', label); b.onclick = () => { catSel = catSel === cat ? null : cat; for (const x of chips.querySelectorAll('button[data-c]')) x.classList.toggle('on', x.dataset.c === (catSel || '\u0000')); apply(); }; b.dataset.c = cat; return b; };
@@ -4201,7 +4216,7 @@ function buildDocs() {
       bt.append(op, cp); c.append(bt);
       watchThumb(docObserver, c, d);
     }
-    cards.push(c); pane.append(c);
+    c._i = cards.length; cards.push(c); pane.append(c);
   }
   apply();
 }
