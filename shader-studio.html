@@ -196,6 +196,10 @@ button.origin.on { border-color: #2f5f94; color: #8fd0ff; }
 
 .psug button.pfix { display: block; margin-top: 5px; }
 
+.lgroup { margin: 10px 0 4px; }
+.lgh { cursor: pointer; font-weight: 700; color: var(--accent); font-size: 12px; letter-spacing: .04em; text-transform: uppercase; padding: 4px 0; }
+.lgb { color: var(--dim); font-size: 12px; margin: 0 0 4px; }
+
 </style></head><body>
 <div id="app">
   <div id="top">
@@ -522,6 +526,7 @@ in vec3 vWN;
 uniform vec3 cameraPosition;
 uniform float uTime;
 uniform float uSeed;
+uniform vec2 uUvSize;   // world size of one uv unit for curved shapes (0 = measure it per pixel)
 uniform vec2 uResolution;
 uniform vec3 uLightDir;
 uniform vec3 uLightCol;
@@ -543,12 +548,15 @@ vec3 saturate(vec3 x) { return clamp(x, 0.0, 1.0); }
 float remap(float v, float a, float b, float c, float d) { return c + (v - a) * (d - c) / (b - a); }
 mat2 rot2(float a) { float c = cos(a), s = sin(a); return mat2(c, s, -s, c); }
 float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
-float hash11(float p) { p = fract(p * 0.1031); p *= p + 33.33; p *= p + p; return fract(p); }
-float hash21(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
-vec2 hash22(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973)); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.xx + p3.yz) * p3.zy); }
-float hash31(vec3 p3) { p3 = fract(p3 * 0.1031); p3 += dot(p3, p3.zyx + 31.32); return fract((p3.x + p3.y) * p3.z); }
-vec3 hash33(vec3 p3) { p3 = fract(p3 * vec3(0.1031, 0.1030, 0.0973)); p3 += dot(p3, p3.yxz + 33.33); return fract((p3.xxy + p3.yxx) * p3.zyx); }
-float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+// ---- random numbers: an integer hash (Chris Wellons' "lowbias32") run on the float's own bits, so ANY input works: whole numbers, smooth ramps, negatives, big values ----
+uint hashBits(uint x) { x ^= x >> 16u; x *= 0x7feb352du; x ^= x >> 15u; x *= 0x846ca68bu; x ^= x >> 16u; return x; }
+float hashToFloat(uint h) { return float(h >> 8u) * (1.0 / 16777216.0); }
+float hash11(float p) { return hashToFloat(hashBits(floatBitsToUint(p))); }
+float hash21(vec2 p) { uvec2 b = floatBitsToUint(p); return hashToFloat(hashBits(b.x * 0x9e3779b1u + b.y * 0x85ebca6bu)); }
+vec2 hash22(vec2 p) { uvec2 b = floatBitsToUint(p); uint h = hashBits(b.x * 0x9e3779b1u + b.y * 0x85ebca6bu); return vec2(hashToFloat(h), hashToFloat(hashBits(h + 0x9e3779b9u))); }
+float hash31(vec3 p) { uvec3 b = floatBitsToUint(p); return hashToFloat(hashBits(b.x * 0x9e3779b1u + b.y * 0x85ebca6bu + b.z * 0xc2b2ae35u)); }
+vec3 hash33(vec3 p) { uvec3 b = floatBitsToUint(p); uint h = hashBits(b.x * 0x9e3779b1u + b.y * 0x85ebca6bu + b.z * 0xc2b2ae35u); return vec3(hashToFloat(h), hashToFloat(hashBits(h + 0x9e3779b9u)), hashToFloat(hashBits(h + 0x3c6ef372u))); }
+float hash(vec2 p) { return hash21(p); }
 float noise(vec2 p) {
   vec2 i = floor(p), f = fract(p);
   f = f * f * (3.0 - 2.0 * f);
@@ -609,7 +617,13 @@ float noiseTile(vec2 p, float period) {
   vec2 a = mod(i, period), b = mod(i + 1.0, period);
   return mix(mix(hash21(a), hash21(vec2(b.x, a.y)), f.x), mix(hash21(vec2(a.x, b.y)), hash21(b), f.x), f.y);
 }
+float noiseTile(vec2 p, vec2 period) {
+  vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  vec2 a = mod(i, period), b = mod(i + 1.0, period);
+  return mix(mix(hash21(a), hash21(vec2(b.x, a.y)), f.x), mix(hash21(vec2(a.x, b.y)), hash21(b), f.x), f.y);
+}
 float fbmTile(vec2 p, float period) { float s = 0.0, a = 0.5; for (int i = 0; i < 5; i++) { s += a * noiseTile(p, period); p *= 2.0; period *= 2.0; a *= 0.5; } return s / 0.96875; }
+float fbmTile(vec2 p, vec2 period) { float s = 0.0, a = 0.5; for (int i = 0; i < 5; i++) { s += a * noiseTile(p, period); p *= 2.0; period *= 2.0; a *= 0.5; } return s / 0.96875; }
 vec3 palette(float t, vec3 a, vec3 b, vec3 c, vec3 d) { return a + b * cos(6.28318 * (c * t + d)); }
 vec3 hsv2rgb(vec3 c) { vec3 p = abs(fract(c.xxx + vec3(1.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0); return c.z * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), c.y); }
 vec3 rgb2hsv(vec3 c) {
@@ -652,6 +666,12 @@ vec3 graphBG(vec2 uv) {
   c += vec3(0.055) * (1.0 - smoothstep(0.0, 1.2, min(g.x, g.y)));
   return c;
 }
+// ---- how big is the surface under this pixel? Worked out from how vUv and the world position change between neighbouring pixels ----
+mat2 uvToPixels() { mat2 m = mat2(dFdx(vUv), dFdy(vUv)); if (abs(determinant(m)) < 1e-12) return mat2(1.0); return inverse(m); }
+vec2 uvPixelSize() { mat2 s = uvToPixels(); return vec2(length(s[0]), length(s[1])); }
+vec2 uvWorldSize() { if (uUvSize.x > 0.0) return uUvSize; mat2 s = uvToPixels(); vec3 dx = dFdx(vW), dy = dFdy(vW); return vec2(length(dx * s[0].x + dy * s[0].y), length(dx * s[1].x + dy * s[1].y)); }
+vec2 uvFit(vec2 uv, float tile) { return uv * uvWorldSize() / tile; }
+vec2 uvFitWrap(vec2 uv, float tile, vec2 stretch) { return uv * max(floor(uvWorldSize() * stretch / tile + 0.5), 1.0); }
 vec3 viewDir() { return normalize(cameraPosition - vW); }
 vec3 surfNormal() { vec3 n = normalize(vWN); return gl_FrontFacing ? n : -n; }
 float fresnel(vec3 n, vec3 v, float power) { return pow(1.0 - clamp(dot(n, v), 0.0, 1.0), power); }
@@ -799,6 +819,20 @@ const M4 = {
 };
 
 // ------------------------------------------------------------------ shapes
+// average world size of one uv unit over the whole mesh (weighted by uv area): used for shapes where the size changes from place to place
+function meanUvSize(G) {
+  const v = G.v, ix = G.i; let su = 0, sv = 0, sw = 0;
+  for (let t = 0; t < ix.length; t += 3) {
+    const a = ix[t] * 8, b = ix[t + 1] * 8, c = ix[t + 2] * 8;
+    const e1 = [v[b] - v[a], v[b + 1] - v[a + 1], v[b + 2] - v[a + 2]], e2 = [v[c] - v[a], v[c + 1] - v[a + 1], v[c + 2] - v[a + 2]];
+    let d1x = v[b + 6] - v[a + 6], d1y = v[b + 7] - v[a + 7], d2x = v[c + 6] - v[a + 6], d2y = v[c + 7] - v[a + 7];
+    if (Math.abs(d1x) > 0.5 || Math.abs(d2x) > 0.5 || Math.abs(d1y) > 0.5 || Math.abs(d2y) > 0.5) continue;   // triangle across a uv seam
+    const det = d1x * d2y - d2x * d1y; if (Math.abs(det) < 1e-9) continue;
+    const pu = [0, 1, 2].map(k => (e1[k] * d2y - e2[k] * d1y) / det), pv = [0, 1, 2].map(k => (e2[k] * d1x - e1[k] * d2x) / det), w = Math.abs(det);
+    su += Math.hypot(...pu) * w; sv += Math.hypot(...pv) * w; sw += w;
+  }
+  return sw ? [su / sw, sv / sw] : [1, 1];
+}
 function Geo() {
   const v = [], idx = [];
   return {
@@ -821,18 +855,22 @@ function Geo() {
     },
   };
 }
+// a box with its own half-size along x, y and z (every face gets uv 0..1, however big the face is: that is the point of the "Block" shape)
+function boxShape(H) {
+  const G = Geo();
+  const face = (n, u, w) => { const P = (a, b) => [0, 1, 2].map(i => (n[i] + u[i] * a + w[i] * b) * H[i]); G.tri(G.vert(P(-1, -1), n, [0, 0]), G.vert(P(1, -1), n, [1, 0]), G.vert(P(1, 1), n, [1, 1])); G.tri(G.vert(P(-1, -1), n, [0, 0]), G.vert(P(1, 1), n, [1, 1]), G.vert(P(-1, 1), n, [0, 1])); };
+  face([0, 0, 1], [1, 0, 0], [0, 1, 0]); face([0, 0, -1], [-1, 0, 0], [0, 1, 0]); face([1, 0, 0], [0, 0, -1], [0, 1, 0]); face([-1, 0, 0], [0, 0, 1], [0, 1, 0]); face([0, 1, 0], [1, 0, 0], [0, 0, -1]); face([0, -1, 0], [1, 0, 0], [0, 0, 1]);
+  return G.done();
+}
 const SHAPES = {
   rect: { label: 'Rectangle', flat: true, stretch: true, make() { return SHAPES.plane.make(); } },
   square: { label: 'Square', flat: true, make() { return SHAPES.plane.make(); } },
-  sphere: { label: 'Sphere', make() { const G = Geo(); G.grid(72, 44, (u, v) => { const th = v * Math.PI, ph = u * 2 * Math.PI; const n = [Math.sin(th) * Math.cos(ph), Math.cos(th), Math.sin(th) * Math.sin(ph)]; return { p: n, n, uv: [u, 1 - v] }; }); return G.done(); } },
-  cube: { label: 'Cube', make() {
-    const G = Geo(), h = 0.78;
-    const face = (n, u, w) => { const P = (a, b) => [n[0] * h + u[0] * a * h + w[0] * b * h, n[1] * h + u[1] * a * h + w[1] * b * h, n[2] * h + u[2] * a * h + w[2] * b * h]; G.tri(G.vert(P(-1, -1), n, [0, 0]), G.vert(P(1, -1), n, [1, 0]), G.vert(P(1, 1), n, [1, 1])); G.tri(G.vert(P(-1, -1), n, [0, 0]), G.vert(P(1, 1), n, [1, 1]), G.vert(P(-1, 1), n, [0, 1])); };
-    face([0, 0, 1], [1, 0, 0], [0, 1, 0]); face([0, 0, -1], [-1, 0, 0], [0, 1, 0]); face([1, 0, 0], [0, 0, -1], [0, 1, 0]); face([-1, 0, 0], [0, 0, 1], [0, 1, 0]); face([0, 1, 0], [1, 0, 0], [0, 0, -1]); face([0, -1, 0], [1, 0, 0], [0, 0, 1]);
-    return G.done(); } },
+  sphere: { curved: true, label: 'Sphere', make() { const G = Geo(); G.grid(72, 44, (u, v) => { const th = v * Math.PI, ph = u * 2 * Math.PI; const n = [Math.sin(th) * Math.cos(ph), Math.cos(th), Math.sin(th) * Math.sin(ph)]; return { p: n, n, uv: [u, 1 - v] }; }); return G.done(); } },
+  cube: { label: 'Cube', make() { return boxShape([0.78, 0.78, 0.78]); } },
+  block: { label: 'Block (wide)', make() { return boxShape([1.0, 0.4, 0.6]); } },
   plane: { label: 'Plane', make() { const G = Geo(); G.grid(1, 1, (u, v) => ({ p: [(u - 0.5) * 2, (v - 0.5) * 2, 0], n: [0, 0, 1], uv: [u, v] })); return G.done(); } },
-  torus: { label: 'Torus', make() { const G = Geo(), R = 0.72, r = 0.3; G.grid(96, 40, (u, v) => { const a = u * 2 * Math.PI, b = v * 2 * Math.PI; const n = [Math.cos(b) * Math.cos(a), Math.sin(b), Math.cos(b) * Math.sin(a)]; return { p: [(R + r * Math.cos(b)) * Math.cos(a), r * Math.sin(b), (R + r * Math.cos(b)) * Math.sin(a)], n, uv: [u, v] }; }); return G.done(); } },
-  knot: { label: 'Knot', make() {
+  torus: { curved: true, label: 'Torus', make() { const G = Geo(), R = 0.72, r = 0.3; G.grid(96, 40, (u, v) => { const a = u * 2 * Math.PI, b = v * 2 * Math.PI; const n = [Math.cos(b) * Math.cos(a), Math.sin(b), Math.cos(b) * Math.sin(a)]; return { p: [(R + r * Math.cos(b)) * Math.cos(a), r * Math.sin(b), (R + r * Math.cos(b)) * Math.sin(a)], n, uv: [u, v] }; }); return G.done(); } },
+  knot: { curved: true, label: 'Knot', make() {
     const G = Geo(), S = 0.32, r = 0.2, C = t => [(2 + Math.cos(3 * t)) * Math.cos(2 * t) * S, Math.sin(3 * t) * S, (2 + Math.cos(3 * t)) * Math.sin(2 * t) * S];
     const norm = a => { const l = Math.hypot(...a) || 1; return a.map(c => c / l); };
     G.grid(400, 28, (u, v) => {
@@ -848,7 +886,7 @@ const SHAPES = {
     G.grid(64, 1, (u, v) => { const a = u * 2 * Math.PI; return { p: [r * Math.cos(a), (v - 0.5) * h, r * Math.sin(a)], n: [Math.cos(a), 0, Math.sin(a)], uv: [u, v] }; });
     for (const s of [1, -1]) { const c = G.vert([0, s * h / 2, 0], [0, s, 0], [0.5, 0.5]); let prev = -1; for (let k = 0; k <= 64; k++) { const a = k / 64 * 2 * Math.PI, id = G.vert([r * Math.cos(a), s * h / 2, r * Math.sin(a)], [0, s, 0], [0.5 + 0.5 * Math.cos(a), 0.5 + 0.5 * Math.sin(a)]); if (prev >= 0) G.tri(c, prev, id); prev = id; } }
     return G.done(); } },
-  cone: { label: 'Cone', make() {
+  cone: { curved: true, label: 'Cone', make() {
     const G = Geo(), r = 0.85, h = 1.8, nl = Math.hypot(h, r);
     G.grid(64, 8, (u, v) => { const a = u * 2 * Math.PI, rr = r * (1 - v); return { p: [rr * Math.cos(a), (v - 0.5) * h, rr * Math.sin(a)], n: [Math.cos(a) * h / nl, r / nl, Math.sin(a) * h / nl], uv: [u, v] }; });
     const c = G.vert([0, -h / 2, 0], [0, -1, 0], [0.5, 0.5]); let prev = -1;
@@ -862,10 +900,10 @@ const TOD = {
   night: { col: [0.34, 0.42, 0.68], sky: [0.12, 0.15, 0.26], gnd: [0.07, 0.07, 0.1] },
   overcast: { col: [0.6, 0.6, 0.62], sky: [0.6, 0.64, 0.7], gnd: [0.35, 0.35, 0.36] },
 };
-const MANAGED = new Set(['modelMatrix', 'modelViewMatrix', 'projectionMatrix', 'normalMatrix', 'cameraPosition', 'uTime', 'uSeed', 'uResolution', 'uLightDir', 'uLightCol', 'uAmbSky', 'uAmbGround', 'uTex0', 'uNoiseTex', 'uBake', 'uVizMode', 'uVizRange']);
+const MANAGED = new Set(['modelMatrix', 'modelViewMatrix', 'projectionMatrix', 'normalMatrix', 'cameraPosition', 'uTime', 'uSeed', 'uUvSize', 'uResolution', 'uLightDir', 'uLightCol', 'uAmbSky', 'uAmbGround', 'uTex0', 'uNoiseTex', 'uBake', 'uVizMode', 'uVizRange']);
 
 // ------------------------------------------------------------------ renderer
-const BUILTIN_UNI = { uTime: 'float', uSeed: 'float', uResolution: 'vec2', uLightDir: 'vec3', uLightCol: 'vec3', uAmbSky: 'vec3', uAmbGround: 'vec3', cameraPosition: 'vec3', uTex0: 'sampler2D', uNoiseTex: 'sampler2D', uBake: 'sampler2D' };
+const BUILTIN_UNI = { uTime: 'float', uSeed: 'float', uUvSize: 'vec2', uResolution: 'vec2', uLightDir: 'vec3', uLightCol: 'vec3', uAmbSky: 'vec3', uAmbGround: 'vec3', cameraPosition: 'vec3', uTex0: 'sampler2D', uNoiseTex: 'sampler2D', uBake: 'sampler2D' };
 /** The studio already declares uTime, uSeed...; if the user declares them again the compiler complains ("redefinition"). Comment such lines out, keeping the line count. */
 function stripBuiltinUniforms(code) {
   return code.replace(/^([ \t]*)uniform\s+(?:highp\s+|mediump\s+|lowp\s+)?(\w+)\s+(\w+)\s*;/gm, (m, ind, type, name) => (BUILTIN_UNI[name] === type ? ind + '// (built in) ' + type + ' ' + name + ';' : m));
@@ -986,7 +1024,7 @@ class GLView {
     gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 32, 12);
     gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 2, gl.FLOAT, false, 32, 24);
     gl.bindVertexArray(null);
-    return (this.meshes[name] = { vao, count: G.i.length });
+    return (this.meshes[name] = { vao, count: G.i.length, curved: !!SHAPES[name].curved, uvSize: meanUvSize(G) });
   }
   resize() {
     const c = this.canvas, dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -1023,7 +1061,7 @@ class GLView {
     const tod = TOD[o.tod] || TOD.day, az = (o.az || 0) * Math.PI / 180, el = (o.el == null ? 45 : o.el) * Math.PI / 180;
     const vals = {
       modelMatrix: model, modelViewMatrix: mv, projectionMatrix: proj, normalMatrix: M4.normal3(mv), cameraPosition: camPos,
-      uTime: o.time || 0, uSeed: o.seed || 0, uResolution: [vw, vh],
+      uTime: o.time || 0, uSeed: o.seed || 0, uUvSize: flat ? (o.stretch ? [2 * vw / Math.min(vw, vh), 2 * vh / Math.min(vw, vh)] : [0, 0]) : (this.mesh(o.shape).curved ? this.mesh(o.shape).uvSize : [0, 0]), uResolution: [vw, vh],
       uLightDir: [Math.cos(el) * Math.sin(az), Math.sin(el), Math.cos(el) * Math.cos(az)], uLightCol: tod.col, uAmbSky: tod.sky, uAmbGround: tod.gnd,
     };
     if (o.viz) { vals.uVizMode = o.viz.mode; vals.uVizRange = [o.viz.lo, o.viz.hi === o.viz.lo ? o.viz.lo + 1e-4 : o.viz.hi]; }
@@ -1128,7 +1166,7 @@ const Export = (() => {
     if (['vPos', 'vP3', 'vN', 'vW', 'vWN', 'cameraPosition', 'uLightDir'].some(uses)) L.push('// NOTE: this shader uses 3D inputs; ShaderToy has no 3D object, so a flat surface facing the camera is faked.');
     L.push('vec4 fragColor;', '#define gl_FragColor fragColor', '#define texture2D texture');
     L.push('vec2 vUv; vec3 vPos, vN, vW, vWN;', '#define vP3 vPos', '#define vP (vUv * 4.0)', '#define uTime iTime', '#define uResolution iResolution.xy', '#define uTex0 iChannel0', '#define uNoiseTex iChannel1');
-    L.push('const float uSeed = 1.0;', 'const vec3 cameraPosition = vec3(0.0, 0.0, 3.0);', 'const vec3 uLightDir = vec3(0.4851, 0.7276, 0.4851);', 'const vec3 uLightCol = vec3(1.0, 0.95, 0.85);', 'const vec3 uAmbSky = vec3(0.21, 0.24, 0.3);', 'const vec3 uAmbGround = vec3(0.09, 0.08, 0.07);', '');
+    L.push('const float uSeed = 1.0;', 'const vec2 uUvSize = vec2(0.0);', 'const vec3 cameraPosition = vec3(0.0, 0.0, 3.0);', 'const vec3 uLightDir = vec3(0.4851, 0.7276, 0.4851);', 'const vec3 uLightCol = vec3(1.0, 0.95, 0.85);', 'const vec3 uAmbSky = vec3(0.21, 0.24, 0.3);', 'const vec3 uAmbGround = vec3(0.09, 0.08, 0.07);', '');
     if (a.fns.length) { L.push('// ===================== STUDIO HELPERS (not part of GLSL) ====================='); for (const c of a.fns) L.push(c.text); L.push('// ===================== END STUDIO HELPERS =====================', ''); }
     L.push('// ===================== YOUR SHADER =====================', user.replace(/\s+$/, ''), '');
     L.push('void mainImage(out vec4 outColor, in vec2 fragCoord) {', '  vUv = fragCoord / iResolution.xy;', '  vPos = vec3(vUv * 2.0 - 1.0, 0.0); vN = vec3(0.0, 0.0, 1.0); vW = vPos; vWN = vN;', '  fragColor = vec4(0.0, 0.0, 0.0, 1.0);', '  studioMain();', '  outColor = vec4(fragColor.rgb, 1.0);', '}', '');
@@ -1149,9 +1187,9 @@ const Perf = (() => {
     texture: 20, texture2D: 20, textureLod: 20, texelFetch: 15, textureGrad: 24, textureSize: 2,
     dFdx: 4, dFdy: 4, fwidth: 6,
     lessThan: 1, lessThanEqual: 1, greaterThan: 1, greaterThanEqual: 1, equal: 1, notEqual: 1, any: 1, all: 1, not: 1,
-    isnan: 1, isinf: 1, floatBitsToInt: 1, intBitsToFloat: 1,
+    isnan: 1, isinf: 1, floatBitsToInt: 1, intBitsToFloat: 1, floatBitsToUint: 1, uintBitsToFloat: 1,
   };
-  const OPC = { '/': 3, '%': 3, '/=': 3, '*': 1, '+': 1, '-': 1, '*=': 1, '+=': 1, '-=': 1, '<': 1, '>': 1, '<=': 1, '>=': 1, '==': 1, '!=': 1, '&&': 1, '||': 1, '?': 1 };
+  const OPC = { '/': 3, '%': 3, '/=': 3, '*': 1, '+': 1, '-': 1, '*=': 1, '+=': 1, '-=': 1, '<': 1, '>': 1, '<=': 1, '>=': 1, '==': 1, '!=': 1, '&&': 1, '||': 1, '?': 1, '>>': 1, '<<': 1, '^': 1, '&': 1, '|': 1, '^=': 1, '>>=': 1, '<<=': 1, '&=': 1, '|=': 1 };
   const HEAVY = new Set('sin cos tan asin acos atan sinh cosh tanh pow exp exp2 log log2 sqrt inversesqrt'.split(' '));
   const TEX = new Set(['texture', 'texture2D', 'textureLod', 'texelFetch', 'textureGrad']);
   const CONTROL = new Set(['if', 'for', 'while', 'switch', 'return', 'else', 'do']);
@@ -1870,8 +1908,8 @@ add('Textures', 'fn', 'textureSize', 'textureSize(sampler, lod)', 'Size of a tex
 
 // ------------------------------------------------------------------ noise & random
 const STUDIO = { studio: true };
-add('Noise & random', 'fn', 'hash11', 'hash11(float p)', 'A random-looking number 0..1 from one number. The same input always gives the same output.', fx('hash11(floor(x * 24.0))', '// one random height per step'), Object.assign({ ret: 'float' }, STUDIO));
-add('Noise & random', 'fn', 'hash21', 'hash21(vec2 p)', 'A random number 0..1 from a 2D position. Use floor(p) to get one random value per cell.', `void main() {
+add('Noise & random', 'fn', 'hash11', 'hash11(float p)', 'A random-looking number 0..1 from one number. The same input always gives the same output. Works for any input: whole numbers, smooth values, negatives, large numbers.', fx('hash11(floor(x * 24.0))', '// one random height per step'), Object.assign({ ret: 'float' }, STUDIO));
+add('Noise & random', 'fn', 'hash21', 'hash21(vec2 p)', 'A random number 0..1 from a 2D position. Use floor(p) to get one random value per cell, or pass a smooth position for a different value at every pixel. Works for any input.', `void main() {
   float r = hash21(floor(vUv * 12.0));               // a random grey per square
   gl_FragColor = vec4(vec3(r), 1.0);
 }`, Object.assign({ ret: 'float' }, STUDIO));
@@ -1887,7 +1925,15 @@ add('Noise & random', 'fn', 'hash33', 'hash33(vec3 p)', 'Three random numbers fr
   vec3 r = hash33(vec3(floor(vUv * 10.0), 1.0));
   gl_FragColor = vec4(r, 1.0);
 }`, Object.assign({ ret: 'vec3' }, STUDIO));
-add('Noise & random', 'fn', 'hash', 'hash(vec2 p)', 'Older random function, kept so shaders from the game paste in unchanged. Same idea as hash21.', `void main() {
+add('Noise & random', 'fn', 'hashBits', 'hashBits(uint x)', 'The scrambler inside every hash: a whole number in, a thoroughly mixed whole number out (shift-xor and multiply, three shifts and two multiplies). The Learn tab builds it step by step.', `void main() {
+  uint h = hashBits(uint(vUv.x * 40.0));              // 40 different whole numbers
+  gl_FragColor = vec4(vec3(float(h >> 24u) / 255.0), 1.0);
+}`, Object.assign({ ret: 'uint' }, STUDIO));
+add('Noise & random', 'fn', 'hashToFloat', 'hashToFloat(uint h)', 'Turns a mixed whole number (from hashBits) into a float from 0 up to just under 1, using its top 24 bits.', `void main() {
+  float r = hashToFloat(hashBits(uint(vUv.x * 40.0)));
+  gl_FragColor = vec4(vec3(r), 1.0);
+}`, Object.assign({ ret: 'float' }, STUDIO));
+add('Noise & random', 'fn', 'hash', 'hash(vec2 p)', 'Older name for hash21, kept so shaders from the game paste in unchanged. It gives the same numbers as hash21.', `void main() {
   gl_FragColor = vec4(vec3(hash(floor(vUv * 16.0))), 1.0);
 }`, Object.assign({ ret: 'float' }, STUDIO));
 add('Noise & random', 'fn', 'noise', 'noise(vec2 p)', 'Smooth random blobs, 0..1 ("value noise"). p * 8.0 gives about 8 blobs across. The base of clouds, dirt, wood...', `void main() {
@@ -1994,6 +2040,21 @@ add('Helpers', 'fn', 'rot2', 'rot2(float angle)', 'A 2×2 matrix that turns a ve
   float stripes = step(0.0, sin(p.x * 40.0));
   gl_FragColor = vec4(vec3(stripes), 1.0);
 }`, Object.assign({ ret: 'mat2' }, STUDIO));
+add('Helpers', 'fn', 'uvWorldSize', 'uvWorldSize()', 'How big one whole UV unit is in the world, as vec2(width, height), measured under this pixel. On a block that is 2 wide and 0.8 tall the front face gives about (2.0, 0.8). Flat faces, boxes and cylinders are measured per pixel; on curved shapes (sphere, torus, knot, cone) one average size for the whole mesh is used, so patterns stay smooth. On the stretched Rectangle preview it follows the proportions of the window, so patterns stay square. Needs a shape preview.', `void main() {
+  vec2 s = uvWorldSize();
+  gl_FragColor = vec4(s / 2.0, 0.0, 1.0);          // red = width, green = height of the face
+}`, Object.assign({ ret: 'vec2', shape: true, view: 'block' }, STUDIO));
+add('Helpers', 'fn', 'uvPixelSize', 'uvPixelSize()', 'How many screen pixels one whole UV unit covers, as vec2(across, up). Works on the flat rectangle too, where the picture is stretched to the window and the world size is no help.', `void main() {
+  vec2 s = uvPixelSize();
+  gl_FragColor = vec4(s / 600.0, 0.0, 1.0);
+}`, Object.assign({ ret: 'vec2' }, STUDIO));
+add('Helpers', 'fn', 'uvFit', 'uvFit(vec2 uv, float tile)', 'Turn uv into coordinates where one unit is tile world units wide, so patterns keep their shape on any face. uvFit(vUv, 0.25) gives squares a quarter of a world unit across, whatever the size of the face.', `void main() {
+  gl_FragColor = vec4(vec3(checker(uvFit(vUv, 0.25))), 1.0);
+}`, Object.assign({ ret: 'vec2', shape: true, view: 'block' }, STUDIO));
+add('Helpers', 'fn', 'uvFitWrap', 'uvFitWrap(vec2 uv, float tile, vec2 stretch)', 'Like uvFit, but the number of repeats across each direction is rounded to a whole number, so the pattern meets itself at the seam of a cylinder, sphere or torus (uvFit usually leaves a visible seam). The tiles are up to half a tile off from the size you asked for. stretch squeezes the pattern: vec2(2.0, 1.0) gives twice as many repeats across, so tiles half as wide. Use vec2(1.0) for none.', `void main() {
+  vec2 p = uvFitWrap(vUv, 0.25, vec2(1.0));
+  gl_FragColor = vec4(vec3(checker(p)), 1.0);
+}`, Object.assign({ ret: 'vec2', shape: true, view: 'cylinder' }, STUDIO));
 add('Helpers', 'fn', 'checker', 'checker(vec2 p)', 'Checkerboard: 0 or 1, one square per unit. checker(uv * 8.0) gives 8 squares across.', `void main() {
   gl_FragColor = vec4(vec3(checker(vUv * 8.0)), 1.0);
 }`, Object.assign({ ret: 'float' }, STUDIO));
@@ -2031,12 +2092,12 @@ add('Fast & precomputed', 'fn', 'voronoiT', 'voronoiT(vec2 p)', 'Same result as 
   vec3 v = vUv.x < 0.5 ? voronoi(p) : voronoiT(p);
   gl_FragColor = vec4(vec3(v.x), 1.0);
 }`, Object.assign({ ret: 'vec3' }, STUDIO));
-add('Fast & precomputed', 'fn', 'noiseTile', 'noiseTile(vec2 p, float period)', 'Value noise that repeats exactly every "period" cells (period must be a whole number). Made for bake(): a picture that tiles can be scrolled forever with no visible seam. The picture below shows 2 × 2 copies of one tile.', `void main() {
+add('Fast & precomputed', 'fn', 'noiseTile', 'noiseTile(vec2 p, float period)  or  noiseTile(vec2 p, vec2 period)', 'Value noise that repeats exactly every "period" cells (a whole number; give a vec2 to repeat a different number of cells across and up). Made for bake(): a picture that tiles can be scrolled forever with no visible seam. The picture below shows 2 × 2 copies of one tile.', `void main() {
   vec2 tile = fract(vUv * 2.0);
   float n = noiseTile(tile * 4.0, 4.0);
   gl_FragColor = vec4(vec3(n), 1.0);
 }`, Object.assign({ ret: 'float' }, STUDIO));
-add('Fast & precomputed', 'fn', 'fbmTile', 'fbmTile(vec2 p, float period)', 'Layered noise (like fbm) that repeats exactly every "period" cells at its coarsest layer, so it tiles with no seam. Use it inside bake(). The picture shows 2 × 2 copies of one tile.', `void main() {
+add('Fast & precomputed', 'fn', 'fbmTile', 'fbmTile(vec2 p, float period)  or  fbmTile(vec2 p, vec2 period)', 'Layered noise (like fbm) that repeats exactly every "period" cells at its coarsest layer (a vec2 sets across and up separately), so it tiles with no seam. Use it inside bake(). The picture shows 2 × 2 copies of one tile.', `void main() {
   vec2 tile = fract(vUv * 2.0);
   float f = fbmTile(tile * 4.0, 4.0);
   gl_FragColor = vec4(vec3(f), 1.0);
@@ -3759,6 +3820,1447 @@ void main() {
 }` },
 ], true);
 
+lesson('uvsize', 'Same pattern on every size: compensating for UV size', 'Intermediate',
+  'UV always runs 0 to 1 across a face, however big the face is. Measure the real size and use it, so patterns are never stretched.', [
+  { t: 'The problem: UV ignores size', x: `Every face of a shape gets \`vUv\` from 0 to 1, whether the face is a coin or a wall. So a pattern written in \`vUv\` is **squeezed onto the face**: on a face that is wider than tall, squares become wide rectangles.
+
+Here is a block (2 wide, 0.8 tall, 1.2 deep) with 8 by 8 checks per face. The checks are only square on faces that happen to be square. Look at the front, the side and the top: all three have the same 8 by 8 checks, but different shapes.`,
+    view: 'block', shape: true, new: ['checker', 'lambert'], try: 'Orbit around the block and compare the checks on the front, side and top.',
+    code: `void main() {
+  float c = checker(vUv * 8.0);
+  vec3 col = mix(vec3(0.15), vec3(0.9), c);
+  col *= 0.55 + 0.45 * lambert(surfNormal(), uLightDir);
+  gl_FragColor = vec4(col, 1.0);
+}` },
+  { t: 'Fix by hand: multiply by the size', x: `The idea is simple: if the face is **2 units wide** and **0.8 tall**, then multiplying u by 2 and v by 0.8 makes **one unit of the pattern equal to one world unit** in both directions. Now we choose how big a check is in the world: here every check is 0.25 units, so we divide by 0.25.
+
+\`uv * size / tile\`. This looks right on the front, but the side face is 1.2 wide, not 2, so it is still wrong there. A number you type in is right for **one** face only.`,
+    view: 'block', shape: true, try: 'The front is fixed. Change size to vec2(1.2, 0.8) and the side is fixed instead.',
+    code: `void main() {
+  vec2 size = vec2(2.0, 0.8);     // world size of the front face
+  float tile = 0.25;              // a check is 0.25 world units
+  float c = checker(vUv * size / tile);
+  vec3 col = mix(vec3(0.15), vec3(0.9), c);
+  col *= 0.55 + 0.45 * lambert(surfNormal(), uLightDir);
+  gl_FragColor = vec4(col, 1.0);
+}` },
+  { t: 'Let the GPU measure the size', x: `We want the shader to find \`size\` **itself**, for any face of any shape. The helper [[uvWorldSize]]() does that: it returns how many world units one whole UV unit covers, as \`vec2(width, height)\`.
+
+Shown as colour (red = width, green = height) you can see it measures every face separately: the front is red-ish and low green, the side has less red. Later in this lesson we build it ourselves.`,
+    view: 'block', shape: true, new: ['uvWorldSize'], try: 'Orbit: the colours stay the same, because the world size does not depend on the camera.',
+    code: `void main() {
+  vec2 size = uvWorldSize();
+  gl_FragColor = vec4(size / 2.0, 0.0, 1.0);
+}` },
+  { t: 'Use it: uvFit', x: `Put the measured size where we typed it by hand. Because this is the most common use, there is a one-line helper, [[uvFit]](uv, tile): it is just \`uv * uvWorldSize() / tile\`.
+
+Now the checks are square, **the same size on every face**, and if you scale the block the checks do not stretch, they just get more or fewer.`,
+    view: 'block', shape: true, new: ['uvFit'], try: 'Change 0.25 to 0.1 for smaller checks on every face at once.',
+    code: `void main() {
+  vec2 p = uvFit(vUv, 0.25);
+  float c = checker(p);
+  vec3 col = mix(vec3(0.15), vec3(0.9), c);
+  col *= 0.55 + 0.45 * lambert(surfNormal(), uLightDir);
+  gl_FragColor = vec4(col, 1.0);
+}` },
+  { t: 'Building it: how fast does something change?', x: `How can a shader know the size? It cannot see the model, but it **can compare neighbouring pixels**. [[dFdx]](v) is how much \`v\` changes between this pixel and the one to its right; [[dFdy]](v) the same for the pixel above.
+
+Take the world position \`vW\` and the uv. Moving one pixel changes the position by \`dFdx(vW)\` and the uv by \`dFdx(vUv)\`. So **world distance per uv** is about \`length(dFdx(vW)) / length(dFdx(vUv))\`. This one-direction guess is the whole idea.`,
+    view: 'block', shape: true, new: ['vW', 'dFdx', 'dFdy'], try: 'Orbit: it works on the front, but gets odd when a face is turned so that u no longer runs left to right on screen.',
+    code: `void main() {
+  float worldPerU = length(dFdx(vW)) / length(dFdx(vUv));
+  gl_FragColor = vec4(vec3(worldPerU / 2.0), 1.0);
+}` },
+  { t: 'Building it: any direction', x: `Pixels run left to right and bottom to top, but **u and v can run in any direction on screen** (the side face is turned, the top face is foreshortened). So we must ask: **which pixel step makes u grow by exactly 1?**
+
+Put the two uv changes in a [[mat2]] \`m = mat2(dFdx(vUv), dFdy(vUv))\`. It converts a pixel step into a uv step. The [[inverse]] does the opposite: it converts a uv step into a pixel step. Its first column is the pixel step for **one full u**, the second for **one full v**.
+
+Then the world distance for that pixel step is \`dFdx(vW) * step.x + dFdy(vW) * step.y\`, and its \`length\` is the size. Here it is for u and v.`,
+    view: 'block', shape: true, new: ['mat2', 'inverse'], try: 'Compare with the previous step: now it is right from every angle. Every face keeps its own colour.',
+    code: `vec2 myWorldSize() {
+  mat2 toUv = mat2(dFdx(vUv), dFdy(vUv));     // pixel step -> uv step
+  mat2 toPx = inverse(toUv);                  // uv step -> pixel step
+  vec3 dx = dFdx(vW), dy = dFdy(vW);          // world step per pixel step
+  vec3 alongU = dx * toPx[0].x + dy * toPx[0].y;
+  vec3 alongV = dx * toPx[1].x + dy * toPx[1].y;
+  return vec2(length(alongU), length(alongV));
+}
+void main() {
+  vec2 size = myWorldSize();
+  gl_FragColor = vec4(size / 2.0, 0.0, 1.0);
+}` },
+  { t: 'Your own uvFit, on a cylinder', x: `With your own \`myWorldSize\` the helper is one line. The **cylinder** is the hardest test: its u goes round the whole circumference (about 4.7 units) while v is the height (1.7 units), so with plain uv a pattern is stretched almost 3 times sideways. Pick the Cylinder shape and compare the two lines in the code.`,
+    view: 'cylinder', shape: true, try: 'Swap which line is used for p: with vUv the checks are wide, with myFit they are square.',
+    code: `vec2 myWorldSize() {
+  mat2 toPx = inverse(mat2(dFdx(vUv), dFdy(vUv)));
+  vec3 dx = dFdx(vW), dy = dFdy(vW);
+  return vec2(length(dx * toPx[0].x + dy * toPx[0].y), length(dx * toPx[1].x + dy * toPx[1].y));
+}
+vec2 myFit(vec2 uv, float tile) {
+  return uv * myWorldSize() / tile;
+}
+void main() {
+  vec2 p = myFit(vUv, 0.25);          // try vUv * 8.0 here
+  float c = checker(p);
+  vec3 col = mix(vec3(0.15), vec3(0.9), c);
+  col *= 0.55 + 0.45 * lambert(surfNormal(), uLightDir);
+  gl_FragColor = vec4(col, 1.0);
+}` },
+  { t: 'Compensating for pixels instead', x: `Sometimes you do not want world size but **size on screen**: a flat rectangle shown stretched to the window (like the Rectangle shape here), a full-screen effect, or any 2D picture. There the uv spans the whole window, so a circle drawn in uv turns into an **ellipse** when the window is wider than tall.
+
+Same trick, but measure with the **pixel steps** instead of world distances: \`length(toPx[0])\` is how many pixels one u covers. [[uvPixelSize]]() returns this as \`vec2(across, up)\`. Dividing by the smaller side gives coordinates where one unit is the shorter side of the window, so a circle stays round.`,
+    shape: false, new: ['uvPixelSize'], try: 'Resize the preview or switch it to a wide shape: the circle stays round.',
+    code: `void main() {
+  vec2 px = uvPixelSize();                       // pixels covered by one uv
+  vec2 p = (vUv - 0.5) * px / min(px.x, px.y);   // 1 unit = shorter side
+  float d = length(p) - 0.3;
+  float edge = smoothstep(0.01, 0.0, d);
+  gl_FragColor = vec4(vec3(edge), 1.0);
+}` },
+  { t: 'Limits, and what to do in a game', x: `Four things to know about the derivative method:
+
+**1. Edges.** Derivatives compare neighbouring pixels, so a pixel at the border between two faces can get a wrong size for one pixel row. Usually it is invisible; for hard cases use the next idea.
+
+**2. Curved shapes.** On a sphere, torus or knot the size changes from place to place (a sphere's u is wide at the equator and tiny at the poles). Measuring it per pixel gives a size that jumps between triangles, and multiplying uv by a jumping size draws zig-zags. So for these shapes the studio measures **one average size for the whole mesh** and \`uvWorldSize()\` returns that, which keeps the pattern smooth. The price: it is not equal everywhere, so checks get narrower towards the poles or the inside of the ring. That cannot be avoided with uv; for an even pattern on a sphere use \`vPos\` (3D) instead.
+
+**3. It costs a little.** The inverse and derivatives run per pixel, every frame.
+
+**4. Exporting.** ShaderToy has no mesh, so the export gives sizes of 1 and the pattern is plain uv there.
+
+In a real three.js game it is cheaper to do it **outside the fragment shader**. Either pass the size as a uniform (\`material.uniforms.uSize.value.set(w, h)\` from the mesh's scale), or compute it in the vertex shader from \`modelMatrix\`: \`length(modelMatrix[0].xyz)\` is how much the object is stretched in x. Then \`uv * uSize / tile\` costs one multiply. The derivative helpers are best when you do not know the size beforehand, or when one mesh has faces of different sizes.`,
+    view: 'block', shape: true, try: 'Edit the tile size and the colours: this is the finished pattern.',
+    code: `void main() {
+  vec2 p = uvFit(vUv, 0.2);
+  float c = checker(p);
+  vec3 col = mix(vec3(0.2, 0.15, 0.1), vec3(0.85, 0.7, 0.45), c);
+  col *= 0.55 + 0.45 * lambert(surfNormal(), uLightDir);
+  gl_FragColor = vec4(col, 1.0);
+}` },
+], true);
+
+// ====================================================================== building the helpers
+// These lessons rebuild the studio's own helpers from scratch, under names starting with "my", so you can see
+// that nothing in them is magic. The last step of each says which studio helper it matches.
+lesson('b-hash', 'Random numbers 1: the simple version (multiply and fract)', 'Building the helpers',
+  'A shader has no random() function. Build one from just multiply and fract, see exactly what each line does, and learn where this simple version breaks.', [
+  { t: 'What a hash has to do', x: `Every pixel runs the same code at the same time, and none of them can ask "what number did my neighbour pick?". So "random" in a shader means something else: a **function that scrambles a number so thoroughly that the result looks random**. Same input, same output, always. That is called a **hash**.
+
+A good hash must give the same answer for the same input every time, give an *unrelated* answer when the input changes even a little, and spread its answers evenly between 0 and 1.
+
+**The test used in this lesson.** We cut the screen into 64 × 64 squares and give every square its own whole number, its **id**: 0, 1, 2, ... up to 4095, counting along each row and then up. A hash of the id should give every square an unrelated grey, so the picture looks like TV static. Below is just the id itself, as a plain grey ramp.`,
+    new: ['floor'], try: 'Change 64.0 to 8.0 for fewer, bigger squares (and change 4096.0 to 64.0 to match).',
+    code: `void main() {
+  vec2 cell = floor(vUv * 64.0);
+  float id = cell.y * 64.0 + cell.x;       // 0 ... 4095: a different whole number in every square
+  gl_FragColor = vec4(vec3(id / 4096.0), 1.0);
+}` },
+  { t: 'Ingredient 1: wrap with fract', x: `\`fract(x)\` keeps only the part after the decimal point, so it **wraps** numbers into 0 to 1: fract(2.7) is 0.7.
+
+Multiply the id by a small, awkward number such as **0.1031** and wrap it: each id moves 0.1031 of the way round a circle compared with the one before. That is a first scramble: neighbouring ids no longer get neighbouring greys.
+
+The **left half** shows just this ingredient, and the **right half** is always the finished hash from the next steps. Notice the left half has *regular diagonal stripes*: every step round the circle is the same size, so the pattern repeats itself. One ingredient is not enough, and the next two lines are there to break the regularity.`,
+    try: 'Change 0.1031 to 0.5 and the stripes become a plain chequerboard-like pattern. A "nice" number makes the pattern MORE regular, which is why the constant is awkward.',
+    code: `float myHash(float p) {
+  p = fract(p * 0.1031);
+  p *= p + 33.33;
+  p *= p + p;
+  return fract(p);
+}
+void main() {
+  vec2 cell = floor(vUv * 64.0);
+  float id = cell.y * 64.0 + cell.x;
+  float stage = fract(id * 0.1031);
+  gl_FragColor = vec4(vec3(vUv.x < 0.5 ? stage : myHash(id)), 1.0);
+}` },
+  { t: 'Ingredient 2: multiply by yourself', x: `\`p *= p + 33.33\` means \`p = p * (p + 33.33)\`: the number is multiplied by *itself plus a constant*. That is a **curve**, not a straight line (p² + 33.33p).
+
+Why does a curve help? On a straight line, equal steps in the input give equal steps in the output, which is the regularity we saw. On a curve the step size **depends on where you are**, so neighbouring ids get different step sizes. The 33.33 makes the curve steep, so a small difference between two inputs becomes a big difference in the output.
+
+The left half is now the result of lines 1 and 2, wrapped. The regular stripes are gone, but a trained eye can still find some structure.`,
+    try: 'Change 33.33 to 0.0 and see the left half go smoother. The constant is what makes the curve steep.',
+    code: `float myHash(float p) {
+  p = fract(p * 0.1031);
+  p *= p + 33.33;
+  p *= p + p;
+  return fract(p);
+}
+void main() {
+  vec2 cell = floor(vUv * 64.0);
+  float id = cell.y * 64.0 + cell.x;
+  float p = fract(id * 0.1031);
+  p *= p + 33.33;
+  gl_FragColor = vec4(vec3(vUv.x < 0.5 ? fract(p) : myHash(id)), 1.0);
+}` },
+  { t: 'Ingredient 3: do it again, then wrap', x: `\`p *= p + p\` is \`p = p * (p + p)\`, which is 2 × p × p: a steeper curve still. It repeats the same idea, so tiny differences are blown up again. Then the last \`fract\` wraps the (now large) number back into 0 to 1.
+
+Put the four lines together and you have the whole function: **wrap, curve, steeper curve, wrap**. Both halves of the picture now look like static. That is Dave Hoskins' "Hash without Sine" (the name says what it avoids: the older \`fract(sin(x) * 43758.5453)\` trick, which gives different answers on different graphics cards).`,
+    try: 'Is it really random? Zoom in on the preview and look for diagonal lines or repeating blocks. For ids up to a few thousand there are none.',
+    code: `float myHash(float p) {
+  p = fract(p * 0.1031);
+  p *= p + 33.33;
+  p *= p + p;
+  return fract(p);
+}
+void main() {
+  vec2 cell = floor(vUv * 64.0);
+  float id = cell.y * 64.0 + cell.x;
+  gl_FragColor = vec4(vec3(myHash(id)), 1.0);
+}` },
+  { t: 'Two inputs: a grid cell', x: `A picture usually wants a hash of a **position** (x and y), not one id. The 2D version of the same recipe does the wrap on **three** numbers at once (the x and y of the cell, with x repeated: \`p.xyx\` is *swizzling*: it builds a vec3 from the x, y and x of p), then mixes them together with a \`dot\` product (multiply the numbers pairwise and add: it makes every number depend on the other two) and wraps again.
+
+Now each square is hashed by its own (x, y) position, with no need to count the squares into one id.
+
+(This two-input version is built on the same four-line recipe, so it has the same limits as the one-number version above. The fixes at the end of this lesson are shown on the one-number function.)`,
+    try: 'Change 64.0 to 16.0 for bigger squares.',
+    code: `float myHash2(vec2 p) {
+  vec3 q = fract(vec3(p.xyx) * 0.1031);
+  q += dot(q, q.yzx + 33.33);
+  return fract((q.x + q.y) * q.z);
+}
+void main() {
+  vec2 cell = floor(vUv * 64.0);
+  gl_FragColor = vec4(vec3(myHash2(cell)), 1.0);
+}` },
+  { t: 'The lab: one multiplier, three kinds of input', x: `The constant \`0.1031\` is the number in line 1, \`fract(p * 0.1031)\`. Here it is a slider (\`uK\`), so you can try other numbers and watch what happens. The picture has **three panels**, all hashed with the same \`uK\`:
+
+**Left: whole-number ids** (0 to 4095, the squares from before).
+**Middle: a smooth ramp** from 0 to 1 that creeps up in tiny steps, one per pixel.
+**Right: very big ids** (ten million and up), like cells very far from the origin.
+
+At **0.1031** the left panel is static, the middle is full of stripes, and the right is patterned. I measured what happens for other values with a **pattern strength**: how well one pixel's grey predicts its neighbours' greys. **0% means unrelated, which is static**; 100% means identical (flat stripes). A 64 × 64 picture of true random static still measures about 4% by chance, so anything up to about 6% is static, and above about 10% you can usually see the pattern.
+
+**uK = 0.1031**: ids **4%** (static), ramp **100%**, big ids **83%**.
+**uK = 1.1031**: ids **4%**, ramp **95%**, big ids: one flat grey.
+**uK = 12.1031**: ids **7%**, ramp **45%**, big ids: one flat grey.
+**uK = 127.1031**: ids **57%**, ramp **5%**, big ids: one flat grey.
+**uK = 1000.1031**: ids **79%**, ramp **1%**, big ids: one flat grey.
+**uK = 0.5**: ids **100%**, ramp **100%**, big ids **100%**.
+**uK = 0.01**: ids **20%**, ramp **100%**, big ids **21%**.
+
+No single number is good in all three panels. The next step explains why, and then the lesson fixes it by not asking one number to do everything.`,
+    new: ['uniform'], try: 'Drag uK slowly from 0.01 to 300 and watch which panel breaks first. Then type 0.5 and see the ids panel turn into stripes.',
+    code: `uniform float uK;   // 0.1031 [0.01, 300]
+float myHash(float p) {
+  p = fract(p * uK);
+  p *= p + 33.33;
+  p *= p + p;
+  return fract(p);
+}
+void main() {
+  vec2 cell = floor(vUv * 64.0);
+  float id = cell.y * 64.0 + cell.x;                       // left: whole numbers 0 ... 4095
+  vec2 px = floor(vUv * 512.0);
+  float ramp = (px.y * 512.0 + px.x) / 262144.0;           // middle: smooth ramp 0 to 1, tiny steps
+  float farId = id + 10000000.0;                           // right: the same squares, far from zero
+  float h = vUv.x < 0.333 ? myHash(id) : (vUv.x < 0.667 ? myHash(ramp) : myHash(farId));
+  gl_FragColor = vec4(vec3(h), 1.0);
+}` },
+  { t: 'Why: three forces pulling the number in different directions', x: `**Force 1: sensitivity. A smooth input wants a BIG multiplier.**
+Static means that two neighbouring pixels get *unrelated* answers. The hash only scrambles by stretching differences: a difference in the input is multiplied by \`K\`, then stretched much more by the two curve lines (about a thousand times). For the ids, neighbours differ by **1**, so even a tiny \`K\` gives a big difference. For the smooth ramp, neighbours differ by **0.0000038**. With \`K = 0.1031\` that becomes 0.0000004, and after the curves it is still only about 0.0004 of a turn: neighbours get almost the same grey, so you see smooth stripes. To get the ramp to scramble you need \`K\` around 100 or more: **12.1031 only helps a bit (45% pattern), 127.1031 fixes the middle panel (5%)**.
+
+**Force 2: precision. A BIG number wants a SMALL multiplier.**
+A float holds about **7 digits in total**. If \`p * K\` is 1,031,000 (ten million times 0.1031) then all 7 digits are used up in front of the dot and nothing is left for the fraction that \`fract\` is supposed to keep: the result is only a few different values (the posterised right panel). With \`K = 127\` this starts already at ids around 4000, which is why **127.1031 breaks the ids panel**: 4095 × 127 = 520,000 leaves only 1 or 2 digits for the fraction.
+The rule of thumb: **digits left for the fraction ≈ 7 minus the digits of (input × K)**. Big inputs need small K; tiny steps need big K. These two forces pull in opposite directions.
+
+**Force 3: the fractional part of K must be awkward.**
+For whole numbers only what comes **after the dot** in K matters (\`0.1031\` and \`12.1031\` do the same thing mathematically; only the precision force tells them apart). A round fraction such as \`0.5\` means id 0 lands at 0, id 1 at 0.5, id 2 back at 0: only two places, so you get stripes. An *awkward* fraction like 0.1031 (or the golden ratio, 0.6180) never lands on the same place twice, so the ids spread evenly round the circle. Too small an awkward number (0.01) is also bad: ids 0, 1, 2, 3 are then nearly the same, so neighbours look alike.
+
+So the answer to "which number?" is: **it depends on the input, and no single number covers them all.** Instead of hunting for a magic constant, the next steps give each *piece* of the number its own multiplier.`,
+    try: 'Check force 2 yourself: in the lab set uK to 12.1031 and look at the right panel. Then replace 10000000.0 with 1000.0 and look again.' },
+  { t: 'The fix, part 1: treat the fraction separately', x: `Split the number into two pieces: the **whole part** (\`floor(x)\`, for 7.25 that is 7) and the **fraction** (\`x - floor(x)\`, which is 0.25). Give each its own multiplier:
+
+**whole part:** small awkward K (**0.1031**): no precision problem, evenly spread whole numbers, same as before;
+**fraction part:** a big K (**291.9429**): the fraction is between 0 and 1, so \`part * 291.9429\` stays small enough to keep its precision (fine!), and the big multiplier turns tiny steps into big jumps.
+
+Then add the two results (\`fract(a + b)\`) and run the same two curve lines as before. For a whole number the fraction is 0, so **nothing changes** for ids, but a smooth ramp is now stirred by the big multiplier. In the picture the middle panel is static now (pattern strength about 3%, down from 100%). The right panel is still patterned, and that is the next fix.`,
+    try: 'Change 291.9429 to 0.5 and see the middle panel fail again: the fraction needs a big, awkward number. Then try 12.1031: the stripes come back, fainter.',
+    code: `float myHash(float x) {
+  float whole = floor(x);                  // 7.25 -> 7
+  float part = x - whole;                  // 7.25 -> 0.25
+  float p = fract(fract(whole * 0.1031) + fract(part * 291.9429));
+  p *= p + 33.33;
+  p *= p + p;
+  return fract(p);
+}
+void main() {
+  vec2 cell = floor(vUv * 64.0);
+  float id = cell.y * 64.0 + cell.x;
+  vec2 px = floor(vUv * 512.0);
+  float ramp = (px.y * 512.0 + px.x) / 262144.0;
+  float farId = id + 10000000.0;
+  float h = vUv.x < 0.333 ? myHash(id) : (vUv.x < 0.667 ? myHash(ramp) : myHash(farId));
+  gl_FragColor = vec4(vec3(h), 1.0);
+}` },
+  { t: 'The fix, part 2: cut big whole numbers into chunks', x: `The right panel fails because of force 2: \`whole * 0.1031\` is a huge number for a huge id. The same trick helps again: **cut the whole part into pieces so every piece stays small.**
+
+\`chunk = floor(whole / 4096.0)\` says which block of 4096 numbers we are in (dividing by 4096 is exact in a float, because it is a power of two). \`rest = whole - chunk * 4096.0\` is the position inside that block, from 0 to 4095. Each piece gets its own multiplier: \`rest\` the awkward **0.1031**, and \`chunk\` the **golden ratio 0.6180** (famous for being the "most awkward" fraction there is: multiples of it spread more evenly round the circle than any other fraction).
+
+Now \`rest * 0.1031\` is never more than 423 and \`chunk * 0.618\` stays small too, so there is plenty of precision left, even for ids in the millions. All three panels are static.
+
+**Where do 4096, 291.9429 and 0.6180 come from?** I tried several hundred values for the fraction multiplier on a collection of inputs (whole ids, ids far from zero, negative numbers, smooth ramps in different ranges, steps like 0.001 and 0.37) and kept one that gave static on all of them. The exact digits are not magic, and many other awkward numbers pass the same tests. **Round numbers do not**: 0.1, 40.0 and 0.5 give a pattern strength of over 100% on the ids. And one *near-round* number failed in an interesting way: **1000.1031** is fine for most inputs but gives stripes for input that creeps up in steps of 0.001, because 0.001 × 1000.1031 = 1.0001: every step moves the number round the circle by *one whole turn plus a hair*, so it lands almost on the same place each time. That is called **resonance**, and it is why the fraction multiplier must not sit close to a whole number times a common step size.`,
+    try: 'The right panel only covers two chunks, so first replace id + 10000000.0 with id * 4096.0 (every square in a different chunk). Then change 0.6180 to 0.5 and the right panel turns into stripes. Change it to 0.7549 (another awkward number) and it is static again.',
+    code: `float myHash(float x) {
+  float whole = floor(x);                  // the whole-number part
+  float part = x - whole;                  // the fraction part
+  float chunk = floor(whole / 4096.0);     // which block of 4096 whole numbers
+  float rest = whole - chunk * 4096.0;     // where inside the block: 0 ... 4095
+  float a = fract(rest * 0.1031 + chunk * 0.6180);
+  float b = fract(part * 291.9429);
+  float p = fract(a + b);
+  p *= p + 33.33;
+  p *= p + p;
+  return fract(p);
+}
+void main() {
+  vec2 cell = floor(vUv * 64.0);
+  float id = cell.y * 64.0 + cell.x;
+  vec2 px = floor(vUv * 512.0);
+  float ramp = (px.y * 512.0 + px.x) / 262144.0;
+  float farId = id + 10000000.0;
+  float h = vUv.x < 0.333 ? myHash(id) : (vUv.x < 0.667 ? myHash(ramp) : myHash(farId));
+  gl_FragColor = vec4(vec3(h), 1.0);
+}` },
+  { t: 'What is still wrong with this version', x: `Be honest about what the fixes did **not** fix:
+
+**More work.** It is about three times as many operations as the four-line version, because of the split. Still cheap, but it is no longer "the simple one".
+
+**Floats run out above about 16 million.** A float cannot even store every whole number above 16,777,216 (it skips some), so two different ids can *be* the same number before the hash ever sees them. No hash can fix that.
+
+**The 2D version from earlier has the old limits.** Only the one-number function got the fixes. Smooth positions or huge cell numbers in the two-input version still show patterns.
+
+**Other graphics cards may round differently.** Float maths can differ in the last digit between cards, and a hash that multiplies and wraps several times magnifies that. A shader can look right on your machine and slightly different on another.
+
+**Resonance is still possible.** I tested many step sizes and 291.9429 passed all of them, but for any multiplier there are some step sizes that land it close to a whole number of turns and show stripes. The integer hash has no such weak spot that I could find.
+
+Whole-number maths avoids all of these: it is exact and identical on every card, and it needs no special constants for different input sizes. That is the next lesson, and it is the version the studio's own \`hash11\`, \`hash21\` and friends use.`,
+    try: 'Resonance, live: in the previous step replace float ramp = ... with float ramp = id * 0.001; and 291.9429 with 1000.1031. Stripes appear.' },
+]);
+
+lesson('b-hash2', 'Random numbers 2: the robust version (bits, shifts and xor)', 'Building the helpers',
+  'Treat a number as 32 bits and scramble the bits with shifts, xor and multiplies. Learn binary, hex, >>, & and ^ as you go, then see where this version has limits too.', [
+  { t: 'Why use whole-number maths?', x: `Last lesson's hash scrambles with **float** maths, which rounds, and rounds differently on different graphics cards. The robust fix is to scramble with **whole-number maths**: it is exact, there is no rounding, and every card gives the identical answer.
+
+The price: you have to think of a number as a row of **bits**. This lesson explains bits, binary, hexadecimal, shifting and xor from scratch, then builds the hash in small steps. The studio's own \`hash11\`, \`hash21\`, \`hash22\`, \`hash31\` and \`hash33\` are built this way.
+
+First, the finished function, tested on two inputs at once. The **left half** hashes the 4096 square ids from the last lesson. The **right half** hashes a *smooth* ramp, one slightly different number per pixel, which broke the simple hash. Both give static.`,
+    new: [N('uint', 'uint', 'A whole number that can not be negative, stored in 32 bits. Maths on it is exact and wraps round on overflow, the same on every graphics card.')],
+    try: 'Compare with the simple version: the right half used to be full of ripples.',
+    code: `float myHash(float x) {
+  uint h = floatBitsToUint(x);
+  h ^= h >> 16u;
+  h *= 0x7feb352du;
+  h ^= h >> 15u;
+  h *= 0x846ca68bu;
+  h ^= h >> 16u;
+  return float(h >> 8u) / 16777216.0;
+}
+void main() {
+  vec2 cell = floor(vUv * 64.0);
+  float id = cell.y * 64.0 + cell.x;
+  vec2 px = floor(vUv * 512.0);
+  float ramp = (px.y * 512.0 + px.x) / 262144.0;   // 0 to 1 in tiny steps, one per pixel
+  gl_FragColor = vec4(vec3(vUv.x < 0.5 ? myHash(id) : myHash(ramp)), 1.0);
+}` },
+  { t: 'Bits, binary and hexadecimal', x: `Inside the computer every whole number is a row of **bits**, each 0 or 1. A \`uint\` has **32** of them. Each bit is a place worth double the one before: 1, 2, 4, 8, 16... So 13 is 8 + 4 + 1, written in **binary** as 1101.
+
+Writing 32 bits out is long, so people group them in fours and write each group as one **hexadecimal** digit (0 to 9, then a to f for 10 to 15). \`0x7feb352d\` is just a whole number written that way (\`0x\` says "hex"), and the \`u\` on the end says "unsigned" (a \`uint\`).
+
+The picture counts from 0 to 63 across the screen and shows, in each row, **one bit of that number**: the bottom row is the 1s place (it flips every column), the next is the 2s place (every two columns), then 4s, 8s... a binary counter.
+
+The two new tools in the code: \`n >> k\` slides the bits **right by k places** (the lowest k bits fall off the end), and \`& 1u\` ("and") keeps only the lowest bit. Together, \`(n >> k) & 1u\` is "bit number k of n".`,
+    new: [N('>>', 'n >> k', 'Shift the bits k places to the right. The lowest k bits fall off the end (same as dividing by 2 to the power k, rounding down).'), N('&', 'a & b', 'And: for every bit, 1 only if both bits are 1. n & 1u keeps just the lowest bit.')],
+    try: 'Change 6.0 to 3.0 for three rows. Change 64.0 to 256.0 and you need 8 rows to see all the bits.',
+    code: `void main() {
+  uint n = uint(floor(vUv.x * 64.0));        // 0 ... 63 across the screen
+  uint k = uint(floor(vUv.y * 6.0));         // which bit each row shows (0 = lowest)
+  float on = float((n >> k) & 1u);
+  gl_FragColor = vec4(vec3(on), 1.0);
+}` },
+  { t: 'Line 1: a float is 32 bits too', x: `\`floatBitsToUint(x)\` does **not** convert the number: it hands you the **32 bits the float is stored as**, read as a whole number. Every float, including negative and fractional ones, has its own bit pattern, so this works for **any input**.
+
+Look at the **left half**: the lower 23 bits of the float (\`& 0x7fffffu\` keeps only those), shown as a grey. It is a set of smooth ramps: numbers that are close together have almost the same bits, so reading the bits has **not scrambled anything yet**. The right half is the finished hash.`,
+    new: [N('floatBitsToUint', 'floatBitsToUint(x)', 'The 32 bits a float is stored as, read as a whole number (uint). Nothing is rounded or converted.')],
+    try: 'Change 0x7fffffu to 0xffu to look at only the lowest 8 bits.',
+    code: `float myHash(float x) {
+  uint h = floatBitsToUint(x);
+  h ^= h >> 16u;
+  h *= 0x7feb352du;
+  h ^= h >> 15u;
+  h *= 0x846ca68bu;
+  h ^= h >> 16u;
+  return float(h >> 8u) / 16777216.0;
+}
+void main() {
+  vec2 px = floor(vUv * 512.0);
+  float x = (px.y * 512.0 + px.x) / 262144.0;
+  uint h = floatBitsToUint(x);
+  float stage = float(h & 0x7fffffu) / 8388608.0;
+  gl_FragColor = vec4(vec3(vUv.x < 0.5 ? stage : myHash(x)), 1.0);
+}` },
+  { t: 'Line 3: multiply by a big odd number', x: `\`h *= 0x7feb352du\` multiplies the bits by a big number. If the answer doesn't fit in 32 bits the top simply **falls off and it wraps round**, exactly, every time. The constant is **odd**, so no information is lost: different inputs still give different outputs.
+
+What multiplying accomplishes: a change in a **low** bit spreads to the **higher** bits (the same carrying you do in long multiplication). So the high bits of the answer are well mixed. But the **low** bits of the answer depend only on the low bits of the input, so they are still weak.
+
+The left half is the result after just this multiply. It has changed from smooth ramps into fine diagonal-ish stripes, so it is mixed, but it still has a clear pattern. Multiplying alone can only push changes *upwards*.`,
+    new: [N('0x7feb352du', '0x7feb352du', 'A whole number written in hexadecimal. The trailing u makes it a uint.')],
+    try: 'Change the constant to 0x00000001u: the multiply does nothing and the left half goes back to smooth ramps.',
+    code: `float myHash(float x) {
+  uint h = floatBitsToUint(x);
+  h ^= h >> 16u;
+  h *= 0x7feb352du;
+  h ^= h >> 15u;
+  h *= 0x846ca68bu;
+  h ^= h >> 16u;
+  return float(h >> 8u) / 16777216.0;
+}
+void main() {
+  vec2 px = floor(vUv * 512.0);
+  float x = (px.y * 512.0 + px.x) / 262144.0;
+  uint h = floatBitsToUint(x);
+  h *= 0x7feb352du;
+  float stage = float(h >> 8u) / 16777216.0;
+  gl_FragColor = vec4(vec3(vUv.x < 0.5 ? stage : myHash(x)), 1.0);
+}` },
+  { t: 'Line 2: shift and xor', x: `\`h ^= h >> 16u\` does two things. \`h >> 16u\` slides every bit 16 places to the right: the **top 16 bits end up in the bottom 16** and the rest drop off. Then \`^\` is **xor** ("exclusive or"): for every bit, the answer is 1 where the two bits **differ** and 0 where they match. So \`^\` mixes two numbers bit by bit without losing anything.
+
+Together: **the high bits get folded down onto the low bits**. That is exactly what a multiply can't do. After this line the low bits depend on the high bits, and the *next* multiply spreads that upward again.
+
+The recipe is **fold down, spread up**. The left half now runs lines 2 and 3: xor-shift, then multiply.`,
+    new: [N('^', 'a ^ b', 'Xor: for every bit, 1 if the two bits differ, 0 if they match. Works on whole numbers.')],
+    try: 'Change 16u to 1u or 31u and see how much the left half changes.',
+    code: `float myHash(float x) {
+  uint h = floatBitsToUint(x);
+  h ^= h >> 16u;
+  h *= 0x7feb352du;
+  h ^= h >> 15u;
+  h *= 0x846ca68bu;
+  h ^= h >> 16u;
+  return float(h >> 8u) / 16777216.0;
+}
+void main() {
+  vec2 px = floor(vUv * 512.0);
+  float x = (px.y * 512.0 + px.x) / 262144.0;
+  uint h = floatBitsToUint(x);
+  h ^= h >> 16u;
+  h *= 0x7feb352du;
+  float stage = float(h >> 8u) / 16777216.0;
+  gl_FragColor = vec4(vec3(vUv.x < 0.5 ? stage : myHash(x)), 1.0);
+}` },
+  { t: 'Lines 4 to 6: do it again', x: `One round of fold-and-spread leaves traces, so the hash repeats it: **xor-shift, multiply, xor-shift, multiply, xor-shift**. The left half shows the result after the second multiply, which already looks like static; the last xor-shift (line 6) tidies the low bits that the final multiply left weak.
+
+Where do the odd numbers (\`0x7feb352d\`, \`0x846ca68b\`, and the shifts 16, 15, 16) come from? They were **found by a computer**. Chris Wellons searched huge numbers of constants and measured, for each, whether flipping one input bit flips about **half** of the output bits (the "avalanche" property). This set scored best for this shape of function ("lowbias32"). You can't derive them, and you shouldn't change them in your own copy.`,
+    try: 'Change one hex digit of a constant. Often it still looks fine to the eye, but the measured quality drops.',
+    code: `float myHash(float x) {
+  uint h = floatBitsToUint(x);
+  h ^= h >> 16u;
+  h *= 0x7feb352du;
+  h ^= h >> 15u;
+  h *= 0x846ca68bu;
+  h ^= h >> 16u;
+  return float(h >> 8u) / 16777216.0;
+}
+void main() {
+  vec2 px = floor(vUv * 512.0);
+  float x = (px.y * 512.0 + px.x) / 262144.0;
+  uint h = floatBitsToUint(x);
+  h ^= h >> 16u;
+  h *= 0x7feb352du;
+  h ^= h >> 15u;
+  h *= 0x846ca68bu;
+  float stage = float(h >> 8u) / 16777216.0;
+  gl_FragColor = vec4(vec3(vUv.x < 0.5 ? stage : myHash(x)), 1.0);
+}` },
+  { t: 'The last line: back to 0 to 1', x: `The hash result is a whole number from 0 to 4,294,967,295. A graphics float holds about **24 bits** of detail, so we keep the **top 24 bits** (\`h >> 8u\` drops the lowest 8) and divide by 2²⁴ = 16,777,216. The answer runs from 0 up to just below 1, evenly spread.
+
+\`float(...)\` converts a whole number to a float. In the studio the scrambling lines are \`hashBits\` and this last line is \`hashToFloat\`.`,
+    new: [N('float(x)', 'float(h)', 'Convert a whole number (int or uint) into a float.')],
+    try: 'Change the divider 16777216.0 to 8388608.0 (half): the picture gets brighter and washes out above 1.',
+    code: `float myHash(float x) {
+  uint h = floatBitsToUint(x);
+  h ^= h >> 16u;
+  h *= 0x7feb352du;
+  h ^= h >> 15u;
+  h *= 0x846ca68bu;
+  h ^= h >> 16u;
+  return float(h >> 8u) / 16777216.0;
+}
+void main() {
+  vec2 px = floor(vUv * 512.0);
+  float x = (px.y * 512.0 - 100000.0 + px.x) * 37.0;   // any range works: negative and big numbers too
+  gl_FragColor = vec4(vec3(myHash(x)), 1.0);
+}` },
+  { t: 'Two inputs, several outputs', x: `To hash a **position**, take the bits of **both** numbers, multiply each by a *different* big odd number so that (3, 5) and (5, 3) come out differently, **add** them into one whole number, and run it through the same scrambler. For a random **colour** (three numbers) hash once to get \`h\`, then hash \`h + 1u\` and \`h + 2u\`: different offset, different (but repeatable) number.
+
+This is how the studio's \`hash21\`, \`hash22\` and \`hash33\` work. The \`uvec2\` below is a pair of \`uint\`s, one for x and one for y.`,
+    try: 'Change the offsets 1u and 2u. Every cell stays a random colour, but a different one.',
+    code: `uint myMix(uint h) {
+  h ^= h >> 16u;
+  h *= 0x7feb352du;
+  h ^= h >> 15u;
+  h *= 0x846ca68bu;
+  h ^= h >> 16u;
+  return h;
+}
+float toFloat(uint h) {
+  return float(h >> 8u) / 16777216.0;
+}
+void main() {
+  uvec2 b = floatBitsToUint(floor(vUv * 20.0));
+  uint h = myMix(b.x * 0x9e3779b1u + b.y * 0x85ebca6bu);
+  vec3 colour = vec3(toFloat(h), toFloat(myMix(h + 1u)), toFloat(myMix(h + 2u)));
+  gl_FragColor = vec4(colour, 1.0);
+}` },
+  { t: 'Gotcha: the input decides the output', x: `A hash gives **equal answers for equal inputs**, and that includes inputs you didn't mean to be equal. A common mistake is to hash something like \`vUv.x + vUv.y\`. Every pixel on a diagonal line has the same x + y, so every pixel on that line gets the **same random number**, and you see **diagonal lines**.
+
+The **left half** below does exactly that (with whole-number pixel coordinates, so it looks the same on every graphics card). There are only about a thousand different values of x + y on the whole screen, so the hash can produce only about a thousand different answers, no matter how good it is.
+
+If you add the smooth \`vUv.x + vUv.y\` instead, you may see the lines **plus some noise in places**, and where the noise appears depends on your graphics card. Floats are packed more closely near zero, so in the bottom-left the rounding of the sum differs from pixel to pixel and breaks the lines up. That is a second effect on top of the first, and it is the reason the picture can look different on different machines.
+
+The **right half** feeds in a different number for every pixel (the pixel's position in reading order) and is static. This is the hash working perfectly: **the pattern was in the input, not in the hash.**
+
+To get one random number per pixel from two coordinates, use the two-input hash (\`hash21\`) on both, not the sum.`,
+    try: 'Change (px.x + px.y) / 1024.0 to (px.x * 3.0 + px.y) / 1024.0: still lines, only steeper, because the input is still constant along lines.',
+    code: `float myHash(float x) {
+  uint h = floatBitsToUint(x);
+  h ^= h >> 16u;
+  h *= 0x7feb352du;
+  h ^= h >> 15u;
+  h *= 0x846ca68bu;
+  h ^= h >> 16u;
+  return float(h >> 8u) / 16777216.0;
+}
+void main() {
+  vec2 px = floor(vUv * 512.0);
+  float perPixel = (px.y * 512.0 + px.x) / 262144.0;
+  float diagonal = (px.x + px.y) / 1024.0;           // the same on every diagonal line
+  gl_FragColor = vec4(vec3(vUv.x < 0.5 ? myHash(diagonal) : myHash(perPixel)), 1.0);
+}` },
+  { t: 'Shortcomings of this version', x: `No hash is perfect. Honestly, for this one:
+
+**Cost.** It needs about twice as many operations as the simple version (a few shifts, xors and multiplies). That is still small next to a noise or an fbm, but it is not free.
+
+**Needs integers.** Whole-number maths exists in WebGL2 / GLSL ES 3.00 (which the studio uses) but not in the oldest WebGL1 shaders.
+
+**Float inputs must match exactly.** The hash reads the float's bits, so two numbers that differ in the very last bit give completely unrelated answers. If two places compute "the same" cell number by different routes (say \`floor(p)\` in one and \`p - fract(p)\` in another), a rounding difference can give them different random numbers and you see a seam. Also \`-0.0\` and \`0.0\` have different bits. Hashing whole numbers from \`floor\` is the safe path.
+
+**Not for secrets.** It is built to look random, not to be unguessable.
+
+**Tuned, not proved.** The constants were picked by measuring, and the studio checked the result on smooth ramps, whole numbers, negative numbers and big numbers against the older fract version. It looked like true random numbers in all of them, but "looks random on these tests" is the claim, nothing stronger.`,
+    try: 'Open the Perf tab and compare the cost of hash21 with the simple myHash2 from the previous lesson.',
+    code: `float myHash(float x) {
+  uint h = floatBitsToUint(x);
+  h ^= h >> 16u;
+  h *= 0x7feb352du;
+  h ^= h >> 15u;
+  h *= 0x846ca68bu;
+  h ^= h >> 16u;
+  return float(h >> 8u) / 16777216.0;
+}
+void main() {
+  vec2 cell = floor(vUv * 64.0);
+  gl_FragColor = vec4(vec3(myHash(cell.y * 64.0 + cell.x)), 1.0);
+}` },
+]);
+
+lesson('b-noise', 'Build noise from random numbers', 'Building the helpers',
+  'Blocky random squares become smooth hills: pick a random value at each grid corner and blend between them. This is `noise`, built from scratch.', [
+  { t: 'Start from random squares', x: `Noise is **random numbers placed on a grid, then blended smoothly**. Step one is the grid itself. We reuse the hash from the last lesson (named \`myHash2\` here) and give each cell a random grey. This is blocky, with hard jumps between neighbours; the next steps remove them.`,
+    try: 'Change 8.0 to see bigger or smaller blocks.',
+    code: `uint myMix(uint h) {
+  h ^= h >> 16u;
+  h *= 0x7feb352du;
+  h ^= h >> 15u;
+  h *= 0x846ca68bu;
+  h ^= h >> 16u;
+  return h;
+}
+float myHash2(vec2 p) {
+  uvec2 b = floatBitsToUint(p);
+  return float(myMix(b.x * 0x9e3779b1u + b.y * 0x85ebca6bu) >> 8u) / 16777216.0;
+}
+void main() {
+  vec2 p = vUv * 8.0;
+  gl_FragColor = vec4(vec3(myHash2(floor(p))), 1.0);
+}` },
+  { t: 'Blend between the four corners', x: `Instead of one value per cell, think of a random value at each **corner** of the cell. A pixel in the middle should be a **mix** of the four corners around it, closer corners counting more.
+
+\`floor(p)\` is the cell's corner (\`i\`), and \`fract(p)\` is how far across the cell we are (\`f\`, from 0 to 1). Mix along the bottom edge, mix along the top edge, then mix those two upwards. That is *bilinear interpolation*, and the whole thing is just three \`mix\` calls.
+
+It is smooth now, but look closely: you can still see faint diamond shapes where cells meet.`,
+    try: 'Zoom the preview and look for the diamond-shaped creases along the cell borders.',
+    code: `uint myMix(uint h) {
+  h ^= h >> 16u;
+  h *= 0x7feb352du;
+  h ^= h >> 15u;
+  h *= 0x846ca68bu;
+  h ^= h >> 16u;
+  return h;
+}
+float myHash2(vec2 p) {
+  uvec2 b = floatBitsToUint(p);
+  return float(myMix(b.x * 0x9e3779b1u + b.y * 0x85ebca6bu) >> 8u) / 16777216.0;
+}
+void main() {
+  vec2 p = vUv * 8.0;
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  float bottom = mix(myHash2(i), myHash2(i + vec2(1.0, 0.0)), f.x);
+  float top = mix(myHash2(i + vec2(0.0, 1.0)), myHash2(i + vec2(1.0, 1.0)), f.x);
+  gl_FragColor = vec4(vec3(mix(bottom, top, f.y)), 1.0);
+}` },
+  { t: 'Ease the blend: the smooth curve', x: `The creases appear because a straight blend changes speed suddenly when you cross into the next cell. The fix is to **ease** the blend weight so it starts and ends gently: replace \`f\` with \`f * f * (3.0 - 2.0 * f)\`. That curve is exactly what \`smoothstep(0.0, 1.0, f)\` draws.
+
+One line changes and the creases vanish.`,
+    try: 'Comment out the line f = f * f * (3.0 - 2.0 * f); and compare.',
+    code: `uint myMix(uint h) {
+  h ^= h >> 16u;
+  h *= 0x7feb352du;
+  h ^= h >> 15u;
+  h *= 0x846ca68bu;
+  h ^= h >> 16u;
+  return h;
+}
+float myHash2(vec2 p) {
+  uvec2 b = floatBitsToUint(p);
+  return float(myMix(b.x * 0x9e3779b1u + b.y * 0x85ebca6bu) >> 8u) / 16777216.0;
+}
+void main() {
+  vec2 p = vUv * 8.0;
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  float bottom = mix(myHash2(i), myHash2(i + vec2(1.0, 0.0)), f.x);
+  float top = mix(myHash2(i + vec2(0.0, 1.0)), myHash2(i + vec2(1.0, 1.0)), f.x);
+  gl_FragColor = vec4(vec3(mix(bottom, top, f.y)), 1.0);
+}` },
+  { t: 'Wrap it in a function', x: `Now put it in a function so you can call it with **any** position: \`myNoise(p)\`. This is the studio's \`noise\`, line for line. Calling it with \`p * 4.0\` and \`p * 16.0\` shows the one idea that matters most: **multiplying the input is zoom**. Bigger multiplier, more (smaller) blobs.
+
+The left half uses 4, the right half uses 16.`,
+    new: ['noise'], try: 'Change the 4.0 and 16.0.',
+    code: `uint myMix(uint h) {
+  h ^= h >> 16u;
+  h *= 0x7feb352du;
+  h ^= h >> 15u;
+  h *= 0x846ca68bu;
+  h ^= h >> 16u;
+  return h;
+}
+float myHash2(vec2 p) {
+  uvec2 b = floatBitsToUint(p);
+  return float(myMix(b.x * 0x9e3779b1u + b.y * 0x85ebca6bu) >> 8u) / 16777216.0;
+}
+float myNoise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(myHash2(i), myHash2(i + vec2(1.0, 0.0)), f.x),
+             mix(myHash2(i + vec2(0.0, 1.0)), myHash2(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+void main() {
+  float zoom = vUv.x < 0.5 ? 4.0 : 16.0;
+  gl_FragColor = vec4(vec3(myNoise(vUv * zoom)), 1.0);
+}` },
+  { t: 'Noise in 3D', x: `Putting noise on a 3D object using \`vUv\` can stretch or leave seams. Using the **3D position** with a 3D noise avoids that. The idea is the same one dimension up: a random value at each **cube corner** (8 of them), and the blend runs along x, then y, then z: **seven** \`mix\` calls instead of three.
+
+This is the studio's \`noise3\`. The two-line helper \`myHash3\` is the 3-input version of the hash.`,
+    shape: true, new: ['noise3'], try: 'Change 4.0 to make the pattern finer.',
+    code: `uint myMix(uint h) {
+  h ^= h >> 16u;
+  h *= 0x7feb352du;
+  h ^= h >> 15u;
+  h *= 0x846ca68bu;
+  h ^= h >> 16u;
+  return h;
+}
+float myHash3(vec3 p) {
+  uvec3 b = floatBitsToUint(p);
+  return float(myMix(b.x * 0x9e3779b1u + b.y * 0x85ebca6bu + b.z * 0xc2b2ae35u) >> 8u) / 16777216.0;
+}
+float myNoise3(vec3 p) {
+  vec3 i = floor(p);
+  vec3 f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  float x00 = mix(myHash3(i), myHash3(i + vec3(1.0, 0.0, 0.0)), f.x);
+  float x10 = mix(myHash3(i + vec3(0.0, 1.0, 0.0)), myHash3(i + vec3(1.0, 1.0, 0.0)), f.x);
+  float x01 = mix(myHash3(i + vec3(0.0, 0.0, 1.0)), myHash3(i + vec3(1.0, 0.0, 1.0)), f.x);
+  float x11 = mix(myHash3(i + vec3(0.0, 1.0, 1.0)), myHash3(i + vec3(1.0, 1.0, 1.0)), f.x);
+  return mix(mix(x00, x10, f.y), mix(x01, x11, f.y), f.z);
+}
+void main() {
+  float n = myNoise3(vPos * 4.0);
+  gl_FragColor = finish(vec3(n), 1.0);
+}` },
+]);
+
+lesson('b-fbm', 'Build fbm: layered noise', 'Building the helpers',
+  'One layer of noise looks like soft clouds. Stack several, each finer and fainter, and you get clouds, rock and terrain. That stack is `fbm`.', [
+  { t: 'Two layers by hand', x: `Real surfaces have big shapes **and** small details. One noise has only one size. So add a second layer at **twice the zoom** and **half the strength**, then add them together. Big blobs now carry fine wrinkles.
+
+(\`myNoise\` is the noise you built in the last lesson.)`,
+    try: 'Change the 0.5 to 1.0: the fine layer takes over.',
+    code: `uint myMix(uint h) {
+  h ^= h >> 16u;
+  h *= 0x7feb352du;
+  h ^= h >> 15u;
+  h *= 0x846ca68bu;
+  h ^= h >> 16u;
+  return h;
+}
+float myHash2(vec2 p) {
+  uvec2 b = floatBitsToUint(p);
+  return float(myMix(b.x * 0x9e3779b1u + b.y * 0x85ebca6bu) >> 8u) / 16777216.0;
+}
+float myNoise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(myHash2(i), myHash2(i + vec2(1.0, 0.0)), f.x),
+             mix(myHash2(i + vec2(0.0, 1.0)), myHash2(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+void main() {
+  vec2 p = vUv * 4.0;
+  float n = myNoise(p) + 0.5 * myNoise(p * 2.0);
+  gl_FragColor = vec4(vec3(n / 1.5), 1.0);
+}` },
+  { t: 'Put the layers in a loop', x: `Writing every layer out gets long. Instead, **loop**: each time round, add a layer, then **double the zoom** (\`p *= 2.0\`) and **halve the strength** (\`amp *= 0.5\`). Each layer is called an *octave*, because each is twice the frequency of the one before.
+
+\`for (int i = 0; i < 5; i++)\` reads: start a whole number \`i\` (an \`int\`, a whole-number type, unlike \`float\`) at 0, repeat while it is below 5, add one each time round. The loop runs 5 times. Count the \`myNoise\` calls: each octave costs one, so fbm is **five times** the price of a single noise. Remember that for the optimisation lessons.`,
+    new: ['for', 'int'], try: 'Change 5 to 2, then 8. More octaves, more detail, more cost.',
+    code: `uint myMix(uint h) {
+  h ^= h >> 16u;
+  h *= 0x7feb352du;
+  h ^= h >> 15u;
+  h *= 0x846ca68bu;
+  h ^= h >> 16u;
+  return h;
+}
+float myHash2(vec2 p) {
+  uvec2 b = floatBitsToUint(p);
+  return float(myMix(b.x * 0x9e3779b1u + b.y * 0x85ebca6bu) >> 8u) / 16777216.0;
+}
+float myNoise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(myHash2(i), myHash2(i + vec2(1.0, 0.0)), f.x),
+             mix(myHash2(i + vec2(0.0, 1.0)), myHash2(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+float myFbm(vec2 p) {
+  float sum = 0.0;
+  float amp = 0.5;
+  for (int i = 0; i < 5; i++) {
+    sum += amp * myNoise(p);
+    p *= 2.0;
+    amp *= 0.5;
+  }
+  return sum;
+}
+void main() {
+  gl_FragColor = vec4(vec3(myFbm(vUv * 4.0)), 1.0);
+}` },
+  { t: 'Normalise, and avoid lining up', x: `Two small fixes make it match the studio's \`fbm\`.
+
+**1. The sum is too bright.** Five layers add up to at most 0.5 + 0.25 + 0.125 + 0.0625 + 0.03125 = **0.96875**, so dividing by that keeps the answer within 0 to 1.
+
+**2. The layers line up.** With an exact 2.0 zoom, every layer's cell borders sit on the previous layer's, which can show faint grid lines. Using **2.03** and **shifting each layer** a bit (\`+ vec2(17.1, 9.2)\`) breaks the alignment.`,
+    new: ['fbm'], try: 'Change 2.03 back to 2.0 and look hard for faint straight lines.',
+    code: `uint myMix(uint h) {
+  h ^= h >> 16u;
+  h *= 0x7feb352du;
+  h ^= h >> 15u;
+  h *= 0x846ca68bu;
+  h ^= h >> 16u;
+  return h;
+}
+float myHash2(vec2 p) {
+  uvec2 b = floatBitsToUint(p);
+  return float(myMix(b.x * 0x9e3779b1u + b.y * 0x85ebca6bu) >> 8u) / 16777216.0;
+}
+float myNoise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(myHash2(i), myHash2(i + vec2(1.0, 0.0)), f.x),
+             mix(myHash2(i + vec2(0.0, 1.0)), myHash2(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+float myFbm(vec2 p) {
+  float sum = 0.0;
+  float amp = 0.5;
+  for (int i = 0; i < 5; i++) {
+    sum += amp * myNoise(p);
+    p = p * 2.03 + vec2(17.1, 9.2);
+    amp *= 0.5;
+  }
+  return sum / 0.96875;
+}
+void main() {
+  gl_FragColor = vec4(vec3(myFbm(vUv * 4.0)), 1.0);
+}` },
+  { t: 'Variations: ridges and billows', x: `Because fbm is just a number from 0 to 1, you can reshape it. **\`abs(n * 2.0 - 1.0)\`** folds it around the middle into sharp creases (like mountain ridges or lightning); **\`1.0 - \`** that flips the creases into bright veins.
+
+You are not limited to the helper as it comes. Almost every stone, marble and cloud shader is **fbm plus one reshaping line**.`,
+    new: ['abs'], try: 'Replace the last line with: float v = n; (no folding) and compare.',
+    code: `uint myMix(uint h) {
+  h ^= h >> 16u;
+  h *= 0x7feb352du;
+  h ^= h >> 15u;
+  h *= 0x846ca68bu;
+  h ^= h >> 16u;
+  return h;
+}
+float myHash2(vec2 p) {
+  uvec2 b = floatBitsToUint(p);
+  return float(myMix(b.x * 0x9e3779b1u + b.y * 0x85ebca6bu) >> 8u) / 16777216.0;
+}
+float myNoise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(myHash2(i), myHash2(i + vec2(1.0, 0.0)), f.x),
+             mix(myHash2(i + vec2(0.0, 1.0)), myHash2(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+float myFbm(vec2 p) {
+  float sum = 0.0;
+  float amp = 0.5;
+  for (int i = 0; i < 5; i++) {
+    sum += amp * myNoise(p);
+    p = p * 2.03 + vec2(17.1, 9.2);
+    amp *= 0.5;
+  }
+  return sum / 0.96875;
+}
+void main() {
+  float n = myFbm(vUv * 3.0);
+  float veins = 1.0 - abs(n * 2.0 - 1.0);
+  gl_FragColor = vec4(vec3(pow(veins, 4.0)), 1.0);
+}` },
+]);
+
+lesson('b-voronoi', 'Build voronoi: cells and cracks', 'Building the helpers',
+  'Scatter one random point in every grid cell, and for each pixel find the nearest one. You get cells, scales, stones and (from the borders) cracks.', [
+  { t: 'One random point per cell', x: `Give every grid cell **one random point** somewhere inside it. The hash from before picks where (it needs two numbers, an x and a y; here we make them with two hashes).
+
+For each pixel we measure the **distance to the point of its own cell**. This is a first attempt, and it shows a problem: the distance jumps at cell borders, because a pixel might be much closer to a point in the *next* cell.`,
+    try: 'Look at the hard straight lines at the cell borders. The next step fixes them.',
+    code: `uint myMix(uint h) {
+  h ^= h >> 16u;
+  h *= 0x7feb352du;
+  h ^= h >> 15u;
+  h *= 0x846ca68bu;
+  h ^= h >> 16u;
+  return h;
+}
+float myHash2(vec2 p) {
+  uvec2 b = floatBitsToUint(p);
+  return float(myMix(b.x * 0x9e3779b1u + b.y * 0x85ebca6bu) >> 8u) / 16777216.0;
+}
+void main() {
+  vec2 p = vUv * 6.0;
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  vec2 point = vec2(myHash2(i), myHash2(i + 5.3));
+  gl_FragColor = vec4(vec3(distance(f, point)), 1.0);
+}` },
+  { t: 'Check the neighbours too', x: `The nearest point might be in any of the 8 surrounding cells. So loop over the **3 × 3 block** of cells around the pixel (offsets -1, 0, 1 in each direction), measure the distance to each cell's point, and keep the **smallest**.
+
+The borders are gone, and each point now owns a smooth cone-shaped region. Those regions are called *Voronoi cells*.`,
+    try: 'Change the loop bounds from -1..1 to 0..0 and watch the borders return.',
+    code: `uint myMix(uint h) {
+  h ^= h >> 16u;
+  h *= 0x7feb352du;
+  h ^= h >> 15u;
+  h *= 0x846ca68bu;
+  h ^= h >> 16u;
+  return h;
+}
+float myHash2(vec2 p) {
+  uvec2 b = floatBitsToUint(p);
+  return float(myMix(b.x * 0x9e3779b1u + b.y * 0x85ebca6bu) >> 8u) / 16777216.0;
+}
+void main() {
+  vec2 p = vUv * 6.0;
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  float nearest = 8.0;
+  for (int y = -1; y <= 1; y++) {
+    for (int x = -1; x <= 1; x++) {
+      vec2 cell = vec2(float(x), float(y));
+      vec2 point = vec2(myHash2(i + cell), myHash2(i + cell + 5.3));
+      nearest = min(nearest, distance(f, cell + point));
+    }
+  }
+  gl_FragColor = vec4(vec3(nearest), 1.0);
+}` },
+  { t: 'The second-nearest gives the edges', x: `Also keep the **second-smallest** distance. Inside a cell the nearest point is much closer than the second, but exactly **on a border the two are equal**. So \`second - nearest\` is **0 on the borders** and grows inside the cells. Pass that through \`smoothstep\` and you get **thin crack lines**.
+
+\`if (condition) { ... } else if (...)\` runs a block only when its condition is true. Here: a new nearest distance pushes the old nearest down to second place.
+
+This is why the studio's \`voronoi\` returns three numbers: the nearest distance, the **edge** value (second minus nearest), and a random **id** for each cell.`,
+    new: ['if'], try: 'Change 0.06 to 0.15 for fatter cracks.',
+    code: `uint myMix(uint h) {
+  h ^= h >> 16u;
+  h *= 0x7feb352du;
+  h ^= h >> 15u;
+  h *= 0x846ca68bu;
+  h ^= h >> 16u;
+  return h;
+}
+float myHash2(vec2 p) {
+  uvec2 b = floatBitsToUint(p);
+  return float(myMix(b.x * 0x9e3779b1u + b.y * 0x85ebca6bu) >> 8u) / 16777216.0;
+}
+void main() {
+  vec2 p = vUv * 6.0;
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  float d1 = 8.0;
+  float d2 = 8.0;
+  for (int y = -1; y <= 1; y++) {
+    for (int x = -1; x <= 1; x++) {
+      vec2 cell = vec2(float(x), float(y));
+      vec2 point = vec2(myHash2(i + cell), myHash2(i + cell + 5.3));
+      float d = distance(f, cell + point);
+      if (d < d1) { d2 = d1; d1 = d; }
+      else if (d < d2) { d2 = d; }
+    }
+  }
+  float crack = smoothstep(0.0, 0.06, d2 - d1);
+  gl_FragColor = vec4(vec3(crack), 1.0);
+}` },
+  { t: 'A random id for every cell', x: `The last number is the cell's **id**: a random number that is the same everywhere inside one cell. We get it by hashing the **cell that won** (the one that gave the smallest distance) and remembering it. With the id you can give every stone its own colour, height or rotation.
+
+Together, \`d1\`, the edge, and the id make cobblestones, scales, giraffe skin, cracked mud, soap bubbles...`,
+    new: ['voronoi'], try: 'Use the id for brightness instead: vec3(id).',
+    code: `uint myMix(uint h) {
+  h ^= h >> 16u;
+  h *= 0x7feb352du;
+  h ^= h >> 15u;
+  h *= 0x846ca68bu;
+  h ^= h >> 16u;
+  return h;
+}
+float myHash2(vec2 p) {
+  uvec2 b = floatBitsToUint(p);
+  return float(myMix(b.x * 0x9e3779b1u + b.y * 0x85ebca6bu) >> 8u) / 16777216.0;
+}
+void main() {
+  vec2 p = vUv * 6.0;
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  float d1 = 8.0;
+  float d2 = 8.0;
+  vec2 winner = vec2(0.0);
+  for (int y = -1; y <= 1; y++) {
+    for (int x = -1; x <= 1; x++) {
+      vec2 cell = vec2(float(x), float(y));
+      vec2 point = vec2(myHash2(i + cell), myHash2(i + cell + 5.3));
+      float d = distance(f, cell + point);
+      if (d < d1) { d2 = d1; d1 = d; winner = i + cell; }
+      else if (d < d2) { d2 = d; }
+    }
+  }
+  float id = myHash2(winner + 11.0);
+  vec3 stone = vec3(id, 0.5 + 0.3 * id, 0.4);
+  float crack = smoothstep(0.0, 0.06, d2 - d1);
+  gl_FragColor = vec4(stone * crack, 1.0);
+}` },
+]);
+
+lesson('b-sdf', 'Build shapes from distance (sd functions)', 'Building the helpers',
+  'Each shape is a tiny formula that says how far a point is from the shape\'s edge. Build circle, box, rounded box, ring, blend and a crisp, smooth fill.', [
+  { t: 'A shape is a distance', x: `A *signed distance function* answers one question: **how far is this point from the shape's edge?** It is **negative inside**, **zero on the edge** and **positive outside**. Once you have that number you can fill the shape, outline it, glow it, blend it with others, all with the same few lines.
+
+The circle is the simplest: distance from the centre, minus the radius. We shift the origin to the middle of the screen first (\`vUv - 0.5\`).`,
+    try: 'Change 0.25 for a bigger or smaller circle.',
+    code: `float myCircle(vec2 p, float r) {
+  return length(p) - r;
+}
+void main() {
+  vec2 p = vUv - 0.5;
+  float d = myCircle(p, 0.25);
+  gl_FragColor = vec4(vec3(step(d, 0.0)), 1.0);
+}` },
+  { t: 'A box', x: `For a box, take the absolute value so the four corners behave the same (\`abs\`), then see how far you are **past each side** (\`abs(p) - half size\`). If you are past a side the distance grows; if you are past a corner it is the straight-line distance to the corner, and the \`max\`/\`min\` pieces handle inside and outside.
+
+Don't try to derive the formula; **read the two cases**: outside it is \`length(max(q, 0.0))\`, inside it is the largest negative \`q\`.`,
+    try: 'Change the box size vec2(0.3, 0.15).',
+    code: `float myBox(vec2 p, vec2 hs) {
+  vec2 q = abs(p) - hs;
+  return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0);
+}
+void main() {
+  vec2 p = vUv - 0.5;
+  float d = myBox(p, vec2(0.3, 0.15));
+  gl_FragColor = vec4(vec3(step(d, 0.0)), 1.0);
+}` },
+  { t: 'Round it, outline it', x: `Because \`d\` is a real distance, new shapes come almost free.
+
+**Rounded box:** shrink the box by the corner radius, then subtract the radius from the distance (it grows back, with round corners).
+**Ring or outline:** take the absolute value of the distance (distance to the edge, from both sides) and subtract a thickness.
+
+The same trick turns *any* shape into an outline.`,
+    try: 'Change the corner radius 0.08 and the line thickness 0.01.',
+    code: `float myBox(vec2 p, vec2 hs) {
+  vec2 q = abs(p) - hs;
+  return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0);
+}
+float myRoundBox(vec2 p, vec2 hs, float r) {
+  return myBox(p, hs - r) - r;
+}
+void main() {
+  vec2 p = vUv - 0.5;
+  float d = myRoundBox(p, vec2(0.3, 0.15), 0.08);
+  float outline = abs(d) - 0.01;
+  gl_FragColor = vec4(vec3(step(outline, 0.0)), 1.0);
+}` },
+  { t: 'Smooth edges without blur', x: `\`step\` gives jagged, stair-stepped edges. The cure is a fill that goes from 1 to 0 **over exactly one pixel**. How wide is one pixel in distance units? \`fwidth(d)\` tells you: how much \`d\` changes between neighbouring pixels. So the fill is a \`smoothstep\` between \`-w\` and \`+w\`.
+
+This is the studio's \`sdfFill\`. Works at any zoom, and the edge is one pixel soft no matter how big the shape is.`,
+    new: ['sdfFill', 'fwidth'], try: 'Compare to step(d, 0.0): zoom in the preview and look at the edge.',
+    code: `float myCircle(vec2 p, float r) {
+  return length(p) - r;
+}
+void main() {
+  vec2 p = vUv - 0.5;
+  float d = myCircle(p, 0.3);
+  float w = max(fwidth(d), 0.00001);
+  float fill = 1.0 - smoothstep(-w, w, d);
+  gl_FragColor = vec4(vec3(fill), 1.0);
+}` },
+  { t: 'Blend two shapes', x: `To **join** two shapes take the smaller distance: \`min(a, b)\`. That makes a hard crease where they meet. A **smooth minimum** rounds the crease so the shapes melt into each other like drops of liquid.
+
+\`smin\` works by dipping the result a little below \`min\` when \`a\` and \`b\` are close (within \`k\`). The wider \`k\`, the gooier the blend. Move one circle with \`uTime\`.`,
+    new: ['smin'], try: 'Change k from 0.2 to 0.02 (sharp join) and 0.5 (very gooey).',
+    code: `float mySmin(float a, float b, float k) {
+  float h = max(k - abs(a - b), 0.0) / k;
+  return min(a, b) - h * h * k * 0.25;
+}
+void main() {
+  vec2 p = vUv - 0.5;
+  float a = length(p - vec2(-0.15, 0.0)) - 0.15;
+  float b = length(p - vec2(0.15 * sin(uTime), 0.0)) - 0.12;
+  float d = mySmin(a, b, 0.2);
+  float w = max(fwidth(d), 0.00001);
+  gl_FragColor = vec4(vec3(1.0 - smoothstep(-w, w, d)), 1.0);
+}` },
+]);
+
+lesson('b-small', 'Build the small helpers', 'Building the helpers',
+  'saturate, remap, rot2, checker, luma, palette and hsv2rgb: each is one to three lines, and each solves a problem you hit all the time.', [
+  { t: 'saturate and remap', x: `**\`saturate(x)\`** keeps a number between 0 and 1. It is just \`clamp(x, 0.0, 1.0)\`, but you type it constantly, so it has a short name.
+
+**\`remap(v, a, b, c, d)\`** converts a number from one range to another: the value \`a\` becomes \`c\`, and \`b\` becomes \`d\`. The formula is *how far along a to b are we* (\`(v - a) / (b - a)\`), then *go that far along c to d*.
+
+Below, the screen's x (0 to 1) is remapped to 0.2 to 0.8, a mid-grey ramp.`,
+    new: ['clamp'], try: 'Change 0.2 and 0.8 to 0.0 and 1.0: you get the plain ramp.',
+    code: `float mySaturate(float x) {
+  return clamp(x, 0.0, 1.0);
+}
+float myRemap(float v, float a, float b, float c, float d) {
+  return c + (v - a) * (d - c) / (b - a);
+}
+void main() {
+  float g = myRemap(vUv.x, 0.0, 1.0, 0.2, 0.8);
+  gl_FragColor = vec4(vec3(mySaturate(g)), 1.0);
+}` },
+  { t: 'rot2: rotating a position', x: `To rotate a shape, don't rotate the shape: **rotate the position you look it up with**, the other way. A 2 × 2 matrix does it: its four numbers are cosine and sine of the angle, arranged so that multiplying a position by it spins the position round the origin.
+
+\`cos\` is cosine, the partner of \`sin\`: as the angle grows, \`cos\` and \`sin\` together trace a circle.
+
+\`mat2\` is the type for that 2 × 2 grid of numbers. You write the numbers in **columns**: (c, s) then (-s, c).`,
+    new: ['mat2', 'cos'], try: 'Replace uTime with 0.5 for a fixed angle.',
+    code: `mat2 myRot(float a) {
+  float c = cos(a);
+  float s = sin(a);
+  return mat2(c, s, -s, c);
+}
+void main() {
+  vec2 p = myRot(uTime) * (vUv - 0.5);
+  float stripes = step(0.5, fract(p.x * 6.0));
+  gl_FragColor = vec4(vec3(stripes), 1.0);
+}` },
+  { t: 'checker and luma', x: `**checker**: \`floor\` each coordinate, add them, and keep the remainder after dividing by 2 (\`mod(..., 2.0)\`). Neighbouring cells alternate between odd and even sums, so you get 0, 1, 0, 1 in both directions.
+
+**luma**: how bright a colour *looks*. Our eyes are most sensitive to green and least to blue, so the weighted sum is 0.299 red + 0.587 green + 0.114 blue. A \`dot\` with those three weights does it in one go. Use it to turn anything grey, or to see whether a palette has enough contrast.`,
+    try: 'Change the 8.0, then change a colour of the checker and look at the grey on the right.',
+    code: `float myChecker(vec2 p) {
+  vec2 q = floor(p);
+  return mod(q.x + q.y, 2.0);
+}
+float myLuma(vec3 c) {
+  return dot(c, vec3(0.299, 0.587, 0.114));
+}
+void main() {
+  vec3 colour = mix(vec3(0.9, 0.2, 0.1), vec3(0.1, 0.4, 0.9), myChecker(vUv * 8.0));
+  vec3 grey = vec3(myLuma(colour));
+  gl_FragColor = vec4(vUv.x < 0.5 ? colour : grey, 1.0);
+}` },
+  { t: 'palette: colours from a cosine', x: `A cosine wave goes up and down smoothly forever, so three of them (one each for red, green and blue) with **different speeds and offsets** give a loop of smoothly changing colours. Four vec3 numbers describe the whole palette:
+
+\`a\` the middle level, \`b\` how far it swings, \`c\` how fast each channel cycles, \`d\` the offset of each channel.
+
+\`6.28318\` is 2π, so \`c\` of 1.0 means one full loop.`,
+    new: ['palette'], try: 'Change d to vec3(0.0, 0.1, 0.2) and then c to vec3(2.0, 1.0, 0.0).',
+    code: `vec3 myPalette(float t, vec3 a, vec3 b, vec3 c, vec3 d) {
+  return a + b * cos(6.28318 * (c * t + d));
+}
+void main() {
+  vec3 col = myPalette(vUv.x, vec3(0.5), vec3(0.5), vec3(1.0), vec3(0.0, 0.33, 0.67));
+  gl_FragColor = vec4(col, 1.0);
+}` },
+  { t: 'hsv2rgb: pick colours by hue', x: `Mixing red, green and blue is unnatural for picking colours. **HSV** is friendlier: **hue** (which colour, 0 to 1 around the wheel), **saturation** (grey to vivid), **value** (dark to bright).
+
+The helper builds three sawtooth-shaped curves from \`fract\` and \`abs\`, each shifted by a third of the wheel, then clamps them to get red, green and blue. Don't memorise it. Notice that it is again **fract plus a few lines of arithmetic**.`,
+    new: ['hsv2rgb'], try: 'Change the second number 0.8 (saturation) and the third 1.0 (value).',
+    code: `vec3 myHsv(vec3 c) {
+  vec3 p = abs(fract(c.xxx + vec3(1.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0);
+  return c.z * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), c.y);
+}
+void main() {
+  gl_FragColor = vec4(myHsv(vec3(vUv.x, 0.8, vUv.y)), 1.0);
+}` },
+]);
+
+lesson('b-light', 'Build the lighting helpers', 'Building the helpers',
+  'lambert, blinn, fresnel and bumpFromHeight: each is one idea about angles, and each is a few lines.', [
+  { t: 'lambert: facing the light', x: `A surface looks brighter the more it **faces the light**. The dot product of the surface normal and the direction to the light measures exactly that (1 facing it, 0 side-on, negative facing away), and \`max(..., 0.0)\` stops it going negative.
+
+That is \`lambert\`, the whole of diffuse lighting. \`uLightDir\` is the direction towards the sun in this studio.`,
+    shape: true, try: 'Change the surface colour.',
+    code: `float myLambert(vec3 n, vec3 l) {
+  return max(dot(n, l), 0.0);
+}
+void main() {
+  vec3 n = surfNormal();
+  float lit = myLambert(n, uLightDir);
+  gl_FragColor = vec4(vec3(0.9, 0.5, 0.3) * (0.15 + 0.85 * lit), 1.0);
+}` },
+  { t: 'blinn: the shiny spot', x: `A shiny surface also shows a **highlight** where it mirrors the light into your eye. Blinn's trick: find the **halfway vector** between the light direction and the view direction (\`normalize(l + v)\`); the closer the normal is to that halfway direction, the closer you are to the mirror angle.
+
+Raise that dot product to a high power (**\`pow\`**) to make the spot small and sharp. The *shininess* is that power: 8 is a broad glow, 200 a pin-prick.`,
+    shape: true, new: ['blinn'], try: 'Change 60.0 to 8.0 and then 300.0.',
+    code: `float myBlinn(vec3 n, vec3 l, vec3 v, float shininess) {
+  vec3 h = normalize(l + v);
+  return pow(max(dot(n, h), 0.0), shininess);
+}
+void main() {
+  vec3 n = surfNormal();
+  float spec = myBlinn(n, uLightDir, viewDir(), 60.0);
+  vec3 base = vec3(0.2, 0.3, 0.6) * (0.2 + 0.8 * max(dot(n, uLightDir), 0.0));
+  gl_FragColor = vec4(base + vec3(spec), 1.0);
+}` },
+  { t: 'fresnel: the glancing glow', x: `Look at a puddle straight down and you see the bottom; look across it and you see a mirror. Every surface reflects more at **glancing angles**. The measure is how side-on the surface is to your eye: \`1 - dot(n, v)\` is 0 when you face it and 1 at the silhouette. A power sharpens it towards the edge.
+
+You met \`fresnel\` in the lighting lesson. It is exactly this, with the clamp to avoid negatives.`,
+    shape: true, try: 'Change 3.0 to 1.0 (wide glow) and 8.0 (thin rim).',
+    code: `float myFresnel(vec3 n, vec3 v, float power) {
+  return pow(1.0 - clamp(dot(n, v), 0.0, 1.0), power);
+}
+void main() {
+  vec3 n = surfNormal();
+  float rim = myFresnel(n, viewDir(), 3.0);
+  gl_FragColor = vec4(vec3(0.05, 0.08, 0.15) + vec3(0.3, 0.7, 1.0) * rim, 1.0);
+}` },
+  { t: 'bumpFromHeight: slopes become normals', x: `Bumps are just **tilted normals**. If a height map rises to the right, the surface tilts left, and the light sees it that way. How steep is the height map? \`dFdx(h)\` and \`dFdy(h)\` tell you how much \`h\` changes from this pixel to its neighbour in x and y.
+
+This tiny version nudges the **normal** against that slope. The studio's \`bumpFromHeight\` does the same in a more careful way (it works out the true surface directions so the bump doesn't change with the camera angle, and limits the tilt so nothing goes wild), but the idea is just: **height slope in, tilted normal out.**`,
+    shape: true, new: ['bumpFromHeight', 'dFdx', 'dFdy'], try: 'Change the strength 0.4.',
+    code: `void main() {
+  float h = fbm3(vPos * 8.0);
+  vec3 n = surfNormal();
+  vec3 tilted = normalize(n - 0.4 * vec3(dFdx(h), dFdy(h), 0.0) * 30.0);
+  float lit = max(dot(tilted, uLightDir), 0.0);
+  gl_FragColor = vec4(vec3(0.7, 0.65, 0.6) * (0.2 + 0.8 * lit), 1.0);
+}` },
+]);
+
+// ====================================================================== optimisation
+lesson('o-measure', 'Measure first: where does the time go?', 'Optimisation',
+  'Before changing anything, find out what is actually expensive. How a shader\'s cost is counted, and how to read the Perf tab.', [
+  { t: 'Cost is per pixel, times every pixel', x: `Your \`main()\` runs **once for every pixel, every frame**. A 1000 × 1000 preview is a million pixels, at 60 frames a second: **sixty million runs of your code per second**. So a tiny saving (one fewer function call) matters a lot, and one extra \`fbm\` hurts a lot.
+
+Two things set how slow a shader is: **how much work one run does**, and **how many pixels** it runs for. You can't change how many pixels the screen has, but you control the first.
+
+The shader below is deliberately expensive: three separate \`fbm\` calls, and each \`fbm\` is five noises (you saw that in the build-fbm lesson).`,
+    new: ['fbm'], try: 'Open the Perf tab (right panel) with this shader. Its biggest cost is fbm.',
+    code: `void main() {
+  vec2 p = vUv * 4.0;
+  float a = fbm(p);
+  float b = fbm(p + 5.0);
+  float c = fbm(p + 9.0);
+  gl_FragColor = vec4(a, b, c, 1.0);
+}` },
+  { t: 'Reading the Perf tab', x: `The **Perf** tab does two different things:
+
+**1. A cost estimate**: it reads your code and adds up what each call and loop costs, in "units", then shows **which functions and lines use the most**. It is a *model*, not a measurement, so use it to compare two versions and to find the expensive part, not as an absolute number.
+
+**2. A benchmark**: it really draws your shader many times and times it, then subtracts an empty shader so you see only your code's cost. This depends on your graphics card, which is why it can disagree with the estimate. **When the two disagree, trust the benchmark.**
+
+The tab also lists **suggestions**, each with a button that applies the fix.`,
+    try: 'Open the Perf tab and run the benchmark. Then apply a suggestion and run it again.',
+    code: `void main() {
+  vec2 p = vUv * 4.0;
+  float n = fbm(p) * 0.6 + fbm(p * 3.0) * 0.4;
+  gl_FragColor = vec4(vec3(n), 1.0);
+}` },
+  { t: 'The rules of thumb', x: `Costs, roughly from cheap to expensive:
+
+**Cheap:** + − × ÷, \`mix\`, \`clamp\`, \`min\`, \`max\`, \`dot\`, \`step\`.
+**Medium:** \`sqrt\`, \`length\`, \`normalize\`, \`sin\`, \`cos\`, \`exp\`, \`pow\`.
+**Expensive:** a **noise** (a dozen hashes), an \`fbm\` (five noises), a \`voronoi\` (nine hashes and distances), **anything inside a loop** (times the loop count), and **texture reads that depend on other texture reads**.
+
+So 95% of the time the answer to "why is my shader slow?" is **"too much noise"**: too many calls, too many octaves, or noise inside a loop. The next lessons attack exactly that.`,
+    try: 'Change the shader to call fbm only once. Compare the two in the Perf tab.',
+    code: `void main() {
+  vec2 p = vUv * 4.0;
+  float n = fbm(p);
+  gl_FragColor = vec4(vec3(n), 1.0);
+}` },
+]);
+
+lesson('o-less', 'Do less work per pixel', 'Optimisation',
+  'Five simple habits: reuse results, drop octaves nobody can see, avoid pow, avoid branches, and keep loops short. No new tools needed.', [
+  { t: 'Call it once, use it twice', x: `If you need the same value in two places, **store it in a variable**. The compiler sometimes spots repeats, but you can't count on it, and with something as costly as \`fbm\` a hidden repeat is expensive.
+
+Below, \`fbm(p)\` is computed **twice**. The version in the next step computes it once.`,
+    try: 'Open the Perf tab for this one and note the cost.',
+    code: `void main() {
+  vec2 p = vUv * 4.0;
+  vec3 dark = vec3(0.1, 0.1, 0.2);
+  vec3 light = vec3(0.9, 0.8, 0.6);
+  vec3 col = mix(dark, light, fbm(p));
+  col *= 0.6 + 0.8 * fbm(p);
+  gl_FragColor = vec4(col, 1.0);
+}` },
+  { t: 'The fixed version', x: `Same picture, **half** the noise. Store the value once in \`n\`, then use \`n\` wherever you used \`fbm(p)\`.
+
+This is the single most common saving in other people's shaders: look for any expensive call that has the **same arguments** more than once.`,
+    try: 'Compare the cost with the previous step in the Perf tab.',
+    code: `void main() {
+  vec2 p = vUv * 4.0;
+  float n = fbm(p);
+  vec3 dark = vec3(0.1, 0.1, 0.2);
+  vec3 light = vec3(0.9, 0.8, 0.6);
+  vec3 col = mix(dark, light, n);
+  col *= 0.6 + 0.8 * n;
+  gl_FragColor = vec4(col, 1.0);
+}` },
+  { t: 'Drop the octaves nobody can see', x: `Each extra octave of \`fbm\` adds finer detail, **half as strong** as the layer before. The fifth octave is only 3% of the picture, and when the shape is small on screen, those fine layers are smaller than a pixel and just invisible.
+
+If you don't need the fine detail, write your own fbm with **3 octaves**: it costs 40% less than five. Notice how little the picture changes.`,
+    try: 'Change 3 to 5 and compare the look, then the cost.',
+    code: `float fbm3oct(vec2 p) {
+  float sum = 0.0;
+  float amp = 0.5;
+  for (int i = 0; i < 3; i++) {
+    sum += amp * noise(p);
+    p = p * 2.03 + vec2(17.1, 9.2);
+    amp *= 0.5;
+  }
+  return sum / 0.875;
+}
+void main() {
+  gl_FragColor = vec4(vec3(fbm3oct(vUv * 4.0)), 1.0);
+}` },
+  { t: 'Avoid pow, avoid branches', x: `**pow with a small whole exponent:** \`pow(x, 2.0)\` is \`x * x\` and \`pow(x, 4.0)\` is two squarings. Plain multiplication is cheaper than the general \`pow\`, which is built from \`exp\` and \`log\`.
+
+**if / else:** on a graphics card the pixels in a group all take **both** sides if they disagree, so a branch doesn't skip work the way it does on a CPU. Often \`mix\` or \`step\` gives the same result with no branch: \`x > 0.5 ? a : b\` is \`mix(b, a, step(0.5, x))\`.
+
+Both are tiny wins compared with noise, so apply them when it makes the code simpler too.`,
+    try: 'Replace pow(n, 4.0) with the n2 * n2 version and compare the pictures. They are identical.',
+    code: `void main() {
+  float n = noise(vUv * 6.0);
+  float n2 = n * n;
+  float sharp = n2 * n2;
+  vec3 col = mix(vec3(0.1, 0.15, 0.4), vec3(1.0, 0.8, 0.3), step(0.5, sharp + 0.3));
+  gl_FragColor = vec4(col, 1.0);
+}` },
+  { t: 'Keep loops short, and never put noise in a loop you can avoid', x: `Everything inside a loop is paid for **every time round**. A 16-step loop with an \`fbm\` inside is 16 × 5 = **80 noises per pixel**. Before you write one, ask: can it be fewer steps? Can the expensive part move **outside** the loop?
+
+In this example the noise doesn't change between the steps, so computing it inside the loop is pure waste. Hoisting it out gives the same picture for **1/8** of the noise.`,
+    try: 'Change 8 to 24 and watch the cost in the Perf tab with the noise left outside the loop: it barely moves.',
+    code: `void main() {
+  vec2 p = vUv * 4.0;
+  float n = fbm(p);
+  float sum = 0.0;
+  for (int i = 0; i < 8; i++) {
+    float t = float(i) / 8.0;
+    sum += smoothstep(t, t + 0.2, n);
+  }
+  gl_FragColor = vec4(vec3(sum / 8.0), 1.0);
+}` },
+]);
+
+lesson('o-lookup', 'Swap calculations for lookups (the T helpers)', 'Optimisation',
+  'Instead of calculating hashes every time, read random numbers from a small picture. The studio has a "T" twin for every noise helper.', [
+  { t: 'The idea: a table of random numbers', x: `A noise needs a random number at each grid corner, which our hash calculates with several multiplications. But the hash for cell (3, 7) is **always the same number**. So calculate them **once**, store them in a little 256 × 256 picture, and from then on **just look them up**.
+
+The studio does this for you: there is an automatic picture of random numbers, and every helper that reads from it has a name ending in **T**: \`hashT\`, \`noiseT\`, \`noise3T\`, \`fbmT\`, \`fbm3T\`, \`voronoiT\`. Same inputs, same kind of output. Only the insides differ. (They are studio-made; they only exist here.)`,
+    new: ['noiseT'], try: 'The right half uses the T version. Compare it with the left.',
+    code: `void main() {
+  vec2 p = vUv * 8.0;
+  float n = vUv.x < 0.5 ? noise(p) : noiseT(p);
+  gl_FragColor = vec4(vec3(n), 1.0);
+}` },
+  { t: 'Swap fbm for fbmT', x: `For most shaders the swap is **just adding a T**. \`fbmT\` has the same five octaves, but each octave reads the table instead of hashing.
+
+The pattern is **not identical**: the table holds different random numbers than the hash makes, so the blobs land in different places. The *character* (sizes, contrast, smoothness) is the same. Pick the look you like; you aren't losing quality.
+
+The Perf tab recognises this and offers it as a suggestion with a button.`,
+    new: ['fbmT'], try: 'Left: fbm. Right: fbmT. Then run the Perf benchmark on each (swap which one is in the shader).',
+    code: `void main() {
+  vec2 p = vUv * 4.0;
+  float n = vUv.x < 0.5 ? fbm(p) : fbmT(p);
+  gl_FragColor = vec4(vec3(n), 1.0);
+}` },
+  { t: '3D and voronoi', x: `The same applies to the others. \`noise3T\` and \`fbm3T\` are the 3D versions, and they are what to use on a 3D object (\`vPos\`). \`voronoiT\` replaces the nine-neighbour search's hashes with lookups.
+
+How does \`noise3T\` get a 3D value from a flat picture? Each layer in z is the same picture **shifted** a bit (the G channel is the R channel moved by (37, 17)), and the helper mixes two. A neat trick, with a limit: it repeats every 256 cells, which is far more than a shader ever uses.`,
+    shape: true, new: ['fbm3T', 'voronoiT'], try: 'Replace fbm3T with fbm3 and compare the picture and the Perf tab cost.',
+    code: `void main() {
+  float n = fbm3T(vPos * 3.0);
+  vec3 v = voronoiT(vUv * 6.0);
+  vec3 base = vec3(0.6, 0.55, 0.5) * (0.5 + 0.5 * n);
+  gl_FragColor = finish(base * smoothstep(0.0, 0.08, v.y), 1.0);
+}` },
+  { t: 'hashT: four random numbers at once', x: `\`hashT(cell)\` returns a **vec4**: four independent random numbers in one lookup. When you need a few (a random point and a random colour for a cell, say) one \`hashT\` replaces several hash calls.
+
+It takes a grid cell, so give it a **whole-number** position (\`floor\` first). It repeats every 256 cells.
+
+Rule of thumb: **use the T helper by default for anything that runs per pixel**, and the plain one when you need the exact same pattern as another tool (or a cell value beyond 256).`,
+    new: ['hashT'], try: 'Change 10.0. Note that every cell has four different random numbers to use: r, g, b and a.',
+    code: `void main() {
+  vec4 h = hashT(floor(vUv * 10.0));
+  gl_FragColor = vec4(h.rgb * 0.8 + 0.1, 1.0);
+}` },
+]);
+
+lesson('o-bake', 'Compute once, reuse every frame: bake()', 'Optimisation',
+  'If a pattern doesn\'t change over time, why recalculate it for every pixel in every frame? Draw it once into a picture and just read the picture.', [
+  { t: 'The idea', x: `Many textures never change: wood grain, stone, a marble pattern. Yet a normal shader recalculates them for every pixel, 60 times a second. **Baking** means: draw the pattern **once** into a picture, then in \`main()\` only **read that picture**, which costs almost nothing.
+
+In the studio, write a function called **\`bake(vec2 uv)\`** that returns the pattern for each position of a square, and in \`main()\` read it back with **\`texture(uBake, uv)\`**. The studio draws \`bake\` once, and again only if one of the sliders it uses changes.
+
+\`texture(picture, position)\` is the GLSL function that reads a colour out of a picture at a position (0 to 1 across). (\`bake\` and \`uBake\` are studio-made; \`texture\` is real GLSL.)`,
+    new: ['bake', 'uBake', 'texture'], try: 'Open the Perf tab. The estimate counts bake() separately because it runs once, not every pixel.',
+    code: `vec4 bake(vec2 uv) {
+  float n = fbm(uv * 6.0);
+  return vec4(vec3(n), 1.0);
+}
+void main() {
+  gl_FragColor = texture(uBake, vUv);
+}` },
+  { t: 'Set the picture size', x: `The baked picture has a **size**. A comment right above \`bake\` sets it: \`// bake 1024\` (a 1024 × 1024 picture; the default is 512). Bigger is sharper and uses more memory. Pick the smallest that still looks good at the size the texture is shown.
+
+Zooming works by **changing the coordinate you read with**: \`vUv * 2.0\` shows the picture twice across, repeating. The picture wraps around (it *repeats*) at its edges.`,
+    try: 'Try 256, 512, 2048 and zoom in on the preview.',
+    code: `// bake 1024
+vec4 bake(vec2 uv) {
+  float n = fbm(uv * 6.0);
+  return vec4(vec3(n), 1.0);
+}
+void main() {
+  gl_FragColor = texture(uBake, vUv * 2.0);
+}` },
+  { t: 'Make it tile', x: `When the picture repeats, you may see a **seam** where the left edge meets the right: ordinary noise doesn't match up at the borders. The studio has **tileable** twins: \`noiseTile\` and \`fbmTile\`. They take an extra **period**, a whole number saying "repeat exactly after this many cells". Use the **same whole number** as the scale and the edges meet perfectly.
+
+Here the picture has 6 cells across and the period is 6.`,
+    new: ['fbmTile'], try: 'Replace fbmTile(uv * 6.0, 6.0) with fbm(uv * 6.0) and look for the seam in the zoomed preview.',
+    code: `// bake 1024
+vec4 bake(vec2 uv) {
+  float n = fbmTile(uv * 6.0, 6.0);
+  return vec4(vec3(n), 1.0);
+}
+void main() {
+  gl_FragColor = texture(uBake, vUv * 3.0);
+}` },
+  { t: 'Sliders inside bake()', x: `You can use \`uniform\` sliders inside \`bake\`. The studio notices which sliders \`bake\` reads, and **re-bakes only when one of those moves**. Sliders only used in \`main\` (like the bump strength below) change instantly with no re-bake.
+
+**The limit:** \`bake\` can't use \`uTime\` (it isn't drawn every frame). If you need motion, **move the lookup, not the bake**: scroll the position you read with in \`main()\`, as below.`,
+    new: ['uniform'], try: 'Move uScale: it re-bakes. Move uBump: it doesn\'t. The texture drifts with uTime for free.',
+    code: `uniform float uScale;   // 6.0 [2, 12]
+uniform float uBump;    // 0.1 [0, 0.4]
+// bake 1024
+vec4 bake(vec2 uv) {
+  float n = fbmTile(uv * floor(uScale), floor(uScale));
+  return vec4(vec3(0.4 + 0.5 * n), n);
+}
+void main() {
+  vec4 b = texture(uBake, vUv * 2.0 + vec2(uTime * 0.02, 0.0));
+  gNormal = bumpFromHeight(b.a, uBump);
+  gHasN = 1.0;
+  gl_FragColor = finish(b.rgb, 1.0);
+}` },
+]);
+
+lesson('o-practice', 'Practice: speed up a slow shader', 'Optimisation',
+  'Take one slow shader and speed it up in four steps, checking the Perf tab after each: reuse, fewer octaves, T helpers, bake.', [
+  { t: 'The slow version', x: `A stone-like surface. It works, but: **two** \`fbm3\` calls with the **same position** (one is hidden in the colour, one in the bump), a **third** at 20× zoom, and every call is the full five octaves. Run the benchmark in the Perf tab and write the number down.`,
+    shape: true, new: ['fbm3', 'gShine'], try: 'Note the Perf tab cost and benchmark. We will beat it step by step.',
+    code: `void main() {
+  float h = fbm3(vPos * 5.0);
+  float grit = fbm3(vPos * 20.0);
+  gNormal = bumpFromHeight(fbm3(vPos * 5.0) + grit * 0.2, 0.08);
+  gHasN = 1.0;
+  gShine = 0.3;
+  vec3 col = mix(vec3(0.35), vec3(0.65), h) * (0.8 + 0.4 * grit);
+  gl_FragColor = finish(col, 1.0);
+}` },
+  { t: 'Step 1: reuse', x: `The \`fbm3(vPos * 5.0)\` is computed twice with the same position. Store it once (\`h\`) and use \`h\` in both places. The picture is **identical**. Two of the three noises remain.`,
+    shape: true, try: 'Check the cost in the Perf tab. It dropped by about a third.',
+    code: `void main() {
+  float h = fbm3(vPos * 5.0);
+  float grit = fbm3(vPos * 20.0);
+  gNormal = bumpFromHeight(h + grit * 0.2, 0.08);
+  gHasN = 1.0;
+  gShine = 0.3;
+  vec3 col = mix(vec3(0.35), vec3(0.65), h) * (0.8 + 0.4 * grit);
+  gl_FragColor = finish(col, 1.0);
+}` },
+  { t: 'Step 2: lookups', x: `Swap both calls to the T version: \`fbm3\` becomes \`fbm3T\`. Two letters, and every octave now reads the random-number picture instead of calculating hashes. The stones land in slightly different places, with the same character.`,
+    shape: true, try: 'Run the benchmark again and compare with the first step.',
+    code: `void main() {
+  float h = fbm3T(vPos * 5.0);
+  float grit = fbm3T(vPos * 20.0);
+  gNormal = bumpFromHeight(h + grit * 0.2, 0.08);
+  gHasN = 1.0;
+  gShine = 0.3;
+  vec3 col = mix(vec3(0.35), vec3(0.65), h) * (0.8 + 0.4 * grit);
+  gl_FragColor = finish(col, 1.0);
+}` },
+  { t: 'Step 3: bake it', x: `The rock never changes, so **don't recalculate it**. But \`bake\` draws into a flat picture, and a 3D object wants a pattern that wraps all round it with no seams. For a flat or tiling surface, bake the **tileable** noise and read it with the UVs; that is the right choice for floors, walls and planks.
+
+(For a ball or other object, the \`fbm3T\` version above is already cheap, and is the better answer. **Bake when the surface is a plane or tiles; use T helpers when it wraps 3D shapes.**)
+
+Here the stone is baked and \`main\` is just one picture read.`,
+    new: ['noiseTile'], try: 'Compare the benchmark with Step 2. The more complicated the bake, the bigger the gap.',
+    code: `// bake 1024
+vec4 bake(vec2 uv) {
+  float h = fbmTile(uv * 5.0, 5.0);
+  float grit = fbmTile(uv * 20.0, 20.0);
+  return vec4(mix(vec3(0.35), vec3(0.65), h) * (0.8 + 0.4 * grit), h + grit * 0.2);
+}
+void main() {
+  vec4 b = texture(uBake, vUv);
+  gNormal = bumpFromHeight(b.a, 0.08);
+  gHasN = 1.0;
+  gShine = 0.3;
+  gl_FragColor = finish(b.rgb, 1.0);
+}` },
+  { t: 'What to remember', x: `1. **Measure**, don't guess (Perf tab: estimate to find the hotspot, benchmark to confirm).
+2. **Reuse** any expensive value you compute twice.
+3. **Drop** octaves and loop steps you can't see.
+4. **Swap** to the T helpers by default (\`fbmT\`, \`noise3T\`, \`voronoiT\`).
+5. **Bake** anything that doesn't change over time on a flat or tiling surface.
+
+And one habit to build: after every change, look at the picture **and** the number. A faster shader that looks wrong is not faster, just wrong.`,
+    try: 'Open any library shader, run the Perf tab and see how many of these five tricks apply.',
+    code: `void main() {
+  float n = fbmT(vUv * 6.0);
+  gl_FragColor = vec4(vec3(n), 1.0);
+}` },
+]);
+
 // ====================================================================== 12
 const GOAL_TABLE = [
   ['A shape: circle, box, line, star…', ['length', 'distance', 'sdCircle', 'sdBox', 'sdSegment', 'smoothstep'], 'Make a **distance** number (how far from the shape), then cut it into a mask with `smoothstep`. The "Shapes (2D distance)" docs category has ready-made ones.'],
@@ -3859,6 +5361,17 @@ When you build your own: finish one layer, look at it, add the next. If somethin
   gl_FragColor = vec4(col, 1.0);
 }` },
 ], true);
+
+// The Learn tab shows the lessons under these headings, in this order. A lesson that is not listed here goes into "More".
+const LESSON_GROUPS = [
+  { name: 'Basics', blurb: 'Start here: what a shader is, how it runs, and the first shapes.', ids: ['basics', 'pixels', 'shapes', 'orb'] },
+  { name: 'Patterns, noise and colour', blurb: 'Repeating patterns, natural randomness and colour.', ids: ['patterns', 'noise', 'colour'] },
+  { name: 'Light and materials', blurb: 'Directions, lighting, bumps and shiny surfaces.', ids: ['dirs', 'light', 'bump', 'reflect'] },
+  { name: 'Surfaces and UVs', blurb: 'Make patterns fit any size of surface.', ids: ['uvsize'] },
+  { name: 'Building the helpers', blurb: 'Rebuild the studio\'s own helper functions from scratch, so nothing is magic.', ids: ['b-hash', 'b-hash2', 'b-noise', 'b-fbm', 'b-voronoi', 'b-sdf', 'b-small', 'b-light'] },
+  { name: 'Optimisation', blurb: 'Make shaders fast: measure, do less, use lookups, bake.', ids: ['o-measure', 'o-less', 'o-lookup', 'o-bake', 'o-practice'] },
+  { name: 'Method', blurb: 'How to approach a new idea.', ids: ['backwards'] },
+];
 
 /* ===== editor.js : a small self-contained code editor engine for GLSL =====
    textarea (input, caret, selection) + a highlighted <pre> underneath + line-number gutter.
@@ -4604,7 +6117,8 @@ function resetSettings(opt) {
 }
 function applyStepView(L, st) {   // opening a lesson step: use a view that suits it (flat picture: round, undistorted square; 3D step: a shape)
   const want3D = st.shape !== undefined ? st.shape : L.shape, cur = SHAPES[S.scene.shape];   // only choose a suitable view; other settings stay as they are
-  if (want3D) { if (cur.flat) S.scene.shape = 'sphere'; } else S.scene.shape = 'square';
+  if (st.view && SHAPES[st.view]) S.scene.shape = st.view;    // a step can ask for one particular shape (for example the wide block)
+  else if (want3D) { if (cur.flat) S.scene.shape = 'sphere'; } else S.scene.shape = 'square';
   buildShapes(); buildScene(); markDirty();
 }
 function buildShapes() {
@@ -4681,7 +6195,7 @@ class Thumbs {
     let p = this.cache.get(d.n);
     if (p === undefined) { const r = this.view.build(d.ex, false); p = r.ok ? r.prog : null; if (p) p.gl = this.view.gl; this.cache.set(d.n, p); }
     if (!p) return false;
-    this.view.draw({ prog: p, mode: d.shape ? 'shape' : 'flat', shape: 'sphere', time: t, yaw: 0.5, pitch: 0.25, dist: 3.2, spin: 0, bg: d.shape ? 0 : 1, tod: 'day', az: 40, el: 50, full: true, seed: 0.37, uvals: defaultsFor(d.ex, p) });
+    this.view.draw({ prog: p, mode: d.shape ? 'shape' : 'flat', shape: d.view || 'sphere', time: t, yaw: 0.5, pitch: 0.25, dist: 3.2, spin: 0, bg: d.shape ? 0 : 1, tod: 'day', az: 40, el: 50, full: true, seed: 0.37, uvals: defaultsFor(d.ex, p) });
     const x = target.getContext('2d'); x.drawImage(this.view.canvas, 0, 0, target.width, target.height); return true;
   }
   enqueue(fn) { this.q.push(fn); if (!this.busy) { this.busy = true; setTimeout(() => this.pump(), 0); } }
@@ -4774,7 +6288,7 @@ function buildDocs() {
   apply();
 }
 function openExample(d) {
-  { const flat = !d.shape; S.scene.anim = true; if (!flat && SHAPES[S.scene.shape].flat) S.scene.shape = 'sphere'; if (flat && S.scene.shape !== 'rect' && !SHAPES[S.scene.shape].flat) S.scene.shape = 'square'; buildShapes(); buildScene(); }
+  { const flat = !d.shape; S.scene.anim = true; if (!flat && d.view && SHAPES[d.view] && !SHAPES[d.view].flat) S.scene.shape = d.view; else if (!flat && SHAPES[S.scene.shape].flat) S.scene.shape = 'sphere'; if (flat && S.scene.shape !== 'rect' && !SHAPES[S.scene.shape].flat) S.scene.shape = 'square'; buildShapes(); buildScene(); }
   let e = S.lib.find(x => x.key === exampleKey(d));
   if (!e) { e = { key: exampleKey(d), name: 'Example: ' + d.n, cat: 'Docs examples', type: 'opaque', code: d.ex + '\n', builtin: false, uvals: {} }; S.lib.push(e); }
   e.code = d.ex + '\n'; e.uvals = {}; e.type = 'opaque';
@@ -4807,10 +6321,19 @@ function renderLearn() {
   const L = LESSONS.find(l => l.id === S.ui.lesson);
   if (!L) {
     pane.append(h('div', 'hint', 'Hands-on lessons, meant to be done in order. Each step teaches one small thing, shown in the "New in this step" box, and only uses things taught before it. Every step is a real shader: see what it draws, which lines are new, then open it and change the numbers.'));
-    LESSONS.forEach((l, n) => {
-      const c = h('div', 'lcard'); c.append(h('div', 'lt', (n + 1) + '. ' + l.title), h('div', 'lm', l.level + ' · ' + l.steps.length + ' steps'), h('div', 'ld', l.blurb.replace(/`/g, '')));
-      c.onclick = () => goLesson(l.id, false); pane.append(c);
-    });
+    const listed = new Set(LESSON_GROUPS.flatMap(g => g.ids)), more = LESSONS.filter(l => !listed.has(l.id));
+    const groups = LESSON_GROUPS.concat(more.length ? [{ name: 'More', blurb: '', ids: more.map(l => l.id) }] : []);
+    for (const g of groups) {
+      const ls = g.ids.map(id => LESSONS.find(l => l.id === id)).filter(Boolean); if (!ls.length) continue;
+      const box = h('details', 'lgroup'); box.open = true;
+      box.append(h('summary', 'lgh', g.name + '  (' + ls.length + ')'));
+      if (g.blurb) box.append(h('div', 'lgb', g.blurb));
+      for (const l of ls) {
+        const c = h('div', 'lcard'); c.append(h('div', 'lt', (LESSONS.indexOf(l) + 1) + '. ' + l.title), h('div', 'lm', l.steps.length + ' steps'), h('div', 'ld', l.blurb.replace(/`/g, '')));
+        c.onclick = () => goLesson(l.id, false); box.append(c);
+      }
+      pane.append(box);
+    }
     return;
   }
   const idx = LESSONS.indexOf(L), nav = h('div', 'lnav'), back = h('button', '', '← All lessons');
@@ -4844,7 +6367,7 @@ function renderLearn() {
       c.append(tb);
     }
     if (st.code) {
-      const shape = st.shape !== undefined ? st.shape : L.shape, d = { n: 'L:' + L.id + ':' + i, ex: st.code, shape: !!shape };
+      const shape = st.shape !== undefined ? st.shape : L.shape, d = { n: 'L:' + L.id + ':' + i, ex: st.code, shape: !!shape, view: st.view && SHAPES[st.view] && !SHAPES[st.view].flat ? st.view : 'sphere' };
       const old = new Set((prev || '').split('\n').map(x => x.trim())), b = h('div', 'db'), th = h('div', 'th'), cv = h('canvas'); cv.width = cv.height = 248; th.append(cv); c._cv = cv;
       const pre = h('pre', 'dcode'), hl = GL.highlight(st.code, GL.lex(st.code), GL.analyze(st.code)).split('\n'), src = st.code.split('\n');
       pre.innerHTML = hl.map((x, k) => '<div class="ln' + (prev !== null && src[k].trim() && !old.has(src[k].trim()) ? ' added' : '') + '">' + (x || ' ') + '</div>').join('');
